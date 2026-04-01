@@ -1,0 +1,123 @@
+# ------------------------------
+# Build directories and outputs
+# ------------------------------
+/build/
+/build-*/
+/cmake-build-*/
+/out/
+/bin/
+/lib/
+/lib64/
+
+# ------------------------------
+# CMake / CTest generated files
+# ------------------------------
+/CMakeCache.txt
+/CMakeFiles/
+/cmake_install.cmake
+/install_manifest.txt
+/CTestTestfile.cmake
+/DartConfiguration.tcl
+/Testing/
+/_deps/
+/compile_commands.json
+/Makefile
+/build.ninja
+/rules.ninja
+/.ninja_deps
+/.ninja_log
+
+# ------------------------------
+# Generic compiler/linker output
+# ------------------------------
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.dSYM/
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.manifest
+
+# ------------------------------
+# Coverage / profiling artifacts
+# ------------------------------
+*.gcno
+*.gcda
+*.gcov
+*.profraw
+*.profdata
+*.lcov
+*.info
+
+# ------------------------------
+# Logs and temporary files
+# ------------------------------
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# ------------------------------
+# Editor / IDE metadata
+# ------------------------------
+.vscode/
+.idea/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.VC.db
+*.VC.opendb
+*.sln.docstates
+
+# Xcode
+DerivedData/
+*.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+# ------------------------------
+# OS-generated files
+# ------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ------------------------------
+# Python cache (for helper scripts)
+# ------------------------------
+__pycache__/
+*.py[cod]
+
+# ------------------------------
+# Common runtime/output folders
+# ------------------------------
+/output/
+/outputs/
+/renders/
+/results/
+
+build_local
+build_tests
+build
