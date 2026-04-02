@@ -42,8 +42,9 @@ bool hitAabb(const AABB& box, const Ray& ray, double tMin, double tMax) noexcept
 
 }  // namespace
 
-BVHNode::BVHNode(const Torus& first, const Torus& second) noexcept : primitives_{first, second} {
-  bounds_ = AABB::surroundingBox(primitives_[0].bounds(), primitives_[1].bounds());
+BVHNode::BVHNode(const Torus& first, const Torus& second) noexcept
+    : primitives_{first, second}, primitiveBounds_{first.bounds(), second.bounds()} {
+  bounds_ = AABB::surroundingBox(primitiveBounds_[0], primitiveBounds_[1]);
 }
 
 const Torus& BVHNode::first() const noexcept {
@@ -71,8 +72,13 @@ bool BVHNode::hit(const Ray& ray, HitRecord& hitRecord, double tMin, double tMax
   double closestT = tMax;
   HitRecord candidate{};
 
-  for (const Torus& torus : primitives_) {
-    if (intersectRayTorus(ray, torus, candidate, tMin, closestT, true)) {
+  for (std::size_t i = 0; i < primitives_.size(); ++i) {
+    if (!hitAabb(primitiveBounds_[i], ray, tMin, closestT)) {
+      continue;
+    }
+
+    candidate.primitiveId = static_cast<int>(i);
+    if (intersectRayTorus(ray, primitives_[i], candidate, tMin, closestT, false)) {
       foundHit = true;
       closestT = candidate.t;
       hitRecord = candidate;

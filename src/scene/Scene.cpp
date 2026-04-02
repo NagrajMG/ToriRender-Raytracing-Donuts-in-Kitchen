@@ -245,6 +245,7 @@ bool Scene::hitFloor(const Ray& ray,
 
   hitRecord.t = t;
   hitRecord.point = ray.at(t);
+  hitRecord.primitiveId = -1;
   hitRecord.setFaceNormal(ray, Vec3(0.0, 1.0, 0.0));
 
   return true;
@@ -252,6 +253,13 @@ bool Scene::hitFloor(const Ray& ray,
 
 // choose closest torus material
 Scene::Material Scene::materialForTorusHit(const HitRecord& hitRecord) const noexcept {
+  if (hitRecord.primitiveId == 0) {
+    return torusMaterialA_;
+  }
+  if (hitRecord.primitiveId == 1) {
+    return torusMaterialB_;
+  }
+
   const double dA = std::fabs(torusA_.evaluate(hitRecord.point));
   const double dB = std::fabs(torusB_.evaluate(hitRecord.point));
   return dA <= dB ? torusMaterialA_ : torusMaterialB_;

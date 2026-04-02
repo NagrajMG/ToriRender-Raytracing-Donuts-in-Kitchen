@@ -13,6 +13,6 @@ bool intersectRayTorus(const Ray& ray,
                        HitRecord& hitRecord,
                        double tMin = 1e-4,
                        double tMax = std::numeric_limits<double>::infinity(),
-                       bool useSdfFallback = true) noexcept;
+                       bool useSdfFallback = false) noexcept;
 
 }

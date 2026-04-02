@@ -11,6 +11,8 @@ struct HitRecord {
 
   Vec3 normal{};
 
+  int primitiveId = -1;
+
   bool frontFace = true;
 
   void setFaceNormal(const Ray& ray, const Vec3& outwardNormal) noexcept {

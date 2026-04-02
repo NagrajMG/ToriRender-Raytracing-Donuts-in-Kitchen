@@ -24,7 +24,6 @@ namespace {
 // Terminal args
 struct RenderArgs {
   std::string configPath = "config/scene.json";
-  std::string outputName = "scene_preview.ppm";
   std::string outputDir = "output";
 };
 
@@ -218,19 +217,16 @@ double randomUnit(std::uint64_t& state) noexcept {
   return static_cast<double>(bits >> 11) * kInv53;
 }
 
-std::string normalizedOutputFilename(const std::string& rawName) {
-  std::filesystem::path path(rawName);
-  std::string filename = path.filename().string();
-  if (filename.empty()) {
-    filename = "scene_preview.ppm";
-  }
-  if (std::filesystem::path(filename).extension().empty()) {
-    filename += ".ppm";
-  }
-  return filename;
+std::string serialOutputFilename(int width, int height, int samplesPerPixel, int maxDepth) {
+  return "serial_" + std::to_string(width) + "x" + std::to_string(height) + "_ssp" +
+         std::to_string(samplesPerPixel) + "_depth" + std::to_string(maxDepth) + ".png";
 }
 
 bool resolveOutputPaths(const RenderArgs& args,
+                        int width,
+                        int height,
+                        int samplesPerPixel,
+                        int maxDepth,
                         ResolvedOutputPaths& outPaths,
                         std::string& errorMessage) {
   std::error_code ec;
@@ -246,7 +242,8 @@ bool resolveOutputPaths(const RenderArgs& args,
     return false;
   }
 
-  outPaths.imagePath = outPaths.outputDir / normalizedOutputFilename(args.outputName);
+  outPaths.imagePath =
+      outPaths.outputDir / serialOutputFilename(width, height, samplesPerPixel, maxDepth);
   outPaths.metricsCsvPath = outPaths.outputDir / "render_metrics.csv";
   return true;
 }
@@ -300,10 +297,7 @@ RenderArgs parseArgs(int argc, char** argv) {
     args.configPath = std::string(argv[1]);
   }
   if (argc >= 3) {
-    args.outputName = std::string(argv[2]);
-  }
-  if (argc >= 4) {
-    args.outputDir = std::string(argv[3]);
+    args.outputDir = std::string(argv[2]);
   }
   return args;
 }
@@ -326,7 +320,13 @@ int main(int argc, char** argv) {
   const int samplesPerPixel = std::max(config.camera.samplesPerPixel, 1);
 
   ResolvedOutputPaths outputPaths{};
-  if (!resolveOutputPaths(args, outputPaths, errorMessage)) {
+  if (!resolveOutputPaths(args,
+                          width,
+                          height,
+                          samplesPerPixel,
+                          config.camera.maxDepth,
+                          outputPaths,
+                          errorMessage)) {
     std::cerr << errorMessage << '\n';
     return 1;
   }

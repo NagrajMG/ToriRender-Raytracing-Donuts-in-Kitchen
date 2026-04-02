@@ -28,6 +28,7 @@ class BVHNode {
 
  private:
   std::array<Torus, 2> primitives_;
+  std::array<AABB, 2> primitiveBounds_;
   AABB bounds_;
 };
 
