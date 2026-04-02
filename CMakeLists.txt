@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 
 project(torirender VERSION 0.1.0 LANGUAGES CXX)
 
-# Build toggles for optional components and dependency fetching.
+# Build toggles for dependency fetching.
 option(TORIRENDER_BUILD_TESTS "Build unit tests" ON)
 option(TORIRENDER_ENABLE_MPI "Enable MPI integration when available" ON)
 option(TORIRENDER_ENABLE_OPENMP "Enable OpenMP integration when available" ON)
@@ -17,12 +17,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Core library shared by apps and tests.
 add_library(torirender_core
     src/math/Vec3.cpp
+    src/math/QuarticSolver.cpp
     src/core/Ray.cpp
     src/core/Camera.cpp
     src/geometry/AABB.cpp
     src/geometry/Torus.cpp
+    src/geometry/RayTorus.cpp
+    src/geometry/RayMarcher.cpp
     src/geometry/BVH.cpp
     src/io/Image.cpp
+    src/render/Shader.cpp
+    src/scene/SceneConfig.cpp
+    src/scene/Scene.cpp
 )
 
 target_include_directories(torirender_core
@@ -87,6 +93,10 @@ endif()
 add_executable(point_classifier cli/point_classifier.cpp)
 target_link_libraries(point_classifier PRIVATE torirender_core)
 
+# Renderer utility.
+add_executable(render_scene cli/render_scene.cpp)
+target_link_libraries(render_scene PRIVATE torirender_core)
+
 # Unit tests (Catch2) are enabled when available.
 include(CTest)
 if(BUILD_TESTING AND TORIRENDER_BUILD_TESTS)
@@ -104,14 +114,29 @@ if(BUILD_TESTING AND TORIRENDER_BUILD_TESTS)
     endif()
 
     if(TARGET Catch2::Catch2WithMain)
-        add_executable(torirender_tests
-            tests/unit/test_vec3.cpp
-            tests/unit/test_torus.cpp
-            tests/unit/test_bvh.cpp
-            tests/unit/test_camera.cpp
-        )
-        target_link_libraries(torirender_tests PRIVATE torirender_core Catch2::Catch2WithMain)
-        add_test(NAME torirender_unit_tests COMMAND torirender_tests)
+        add_executable(test_vec3 tests/unit/test_vec3.cpp)
+        target_link_libraries(test_vec3 PRIVATE torirender_core Catch2::Catch2WithMain)
+        add_test(NAME test_vec3 COMMAND test_vec3)
+
+        add_executable(test_torus tests/unit/test_torus.cpp)
+        target_link_libraries(test_torus PRIVATE torirender_core Catch2::Catch2WithMain)
+        add_test(NAME test_torus COMMAND test_torus)
+
+        add_executable(test_bvh tests/unit/test_bvh.cpp)
+        target_link_libraries(test_bvh PRIVATE torirender_core Catch2::Catch2WithMain)
+        add_test(NAME test_bvh COMMAND test_bvh)
+
+        add_executable(test_camera tests/unit/test_camera.cpp)
+        target_link_libraries(test_camera PRIVATE torirender_core Catch2::Catch2WithMain)
+        add_test(NAME test_camera COMMAND test_camera)
+
+        add_executable(test_intersection tests/unit/test_intersection.cpp)
+        target_link_libraries(test_intersection PRIVATE torirender_core Catch2::Catch2WithMain)
+        add_test(NAME test_intersection COMMAND test_intersection)
+
+        add_executable(test_quartic tests/unit/test_quartic.cpp)
+        target_link_libraries(test_quartic PRIVATE torirender_core Catch2::Catch2WithMain)
+        add_test(NAME test_quartic COMMAND test_quartic)
     else()
         message(WARNING "Catch2 not available. Unit test target was not generated.")
     endif()

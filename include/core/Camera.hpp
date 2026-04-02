@@ -19,6 +19,9 @@ class Camera {
   int imageWidth() const noexcept;
   int imageHeight() const noexcept;
 
+  // Sub-pixel ray for jittered sampling or anti-aliasing (monte carlo)
+  Ray getRay(double pixelX, double pixelY) const noexcept;
+  // Pixel-center ray for deterministic single-sample rendering
   Ray getRay(int pixelX, int pixelY) const noexcept;
 
  private:

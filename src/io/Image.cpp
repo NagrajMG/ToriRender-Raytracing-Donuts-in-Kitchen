@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <stdexcept>
 #include <string>
@@ -32,6 +33,16 @@
 #endif
 
 namespace torirender {
+
+namespace {
+
+double toDisplaySpace(double channel) noexcept {
+  const double clampedLinear = std::max(channel, 0.0);
+  const double toneMapped = clampedLinear / (1.0 + clampedLinear);
+  return std::pow(toneMapped, 1.0 / 2.2);
+}
+
+}  // namespace
 
 // Construct image with given dimensions and allocate pixel buffer
 Image::Image(int width, int height) : width_(width), height_(height), pixels_() {
@@ -82,9 +93,9 @@ Vec3 Image::getPixel(int x, int y) const noexcept {
 
 // Convert floating-point color [0,1] to byte [0,255]
 unsigned char Image::toByte(double channel) noexcept {
-  const double clamped = math::clamp(channel, 0.0, 1.0);  // avoid overflow
-  const double scaled = clamped * 255.0;                  // scale to 8-bit range
-  return static_cast<unsigned char>(scaled + 0.5);        // round to nearest
+  const double clamped = math::clamp(toDisplaySpace(channel), 0.0, 1.0);  // avoid overflow
+  const double scaled = clamped * 255.0;                                  // scale to 8-bit range
+  return static_cast<unsigned char>(scaled + 0.5);                        // round to nearest
 }
 
 // Save image as binary PPM

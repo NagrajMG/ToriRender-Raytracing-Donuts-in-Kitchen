@@ -1,7 +1,10 @@
 #pragma once
 
 #include <array>
+#include <limits>
 
+#include "core/Hit.hpp"
+#include "core/Ray.hpp"
 #include "geometry/AABB.hpp"
 #include "geometry/Torus.hpp"
 
@@ -9,19 +12,23 @@ namespace torirender {
 
 class BVHNode {
  public:
-  BVHNode(const Torus& first,
-          const Torus& second) noexcept;  // build node with 2 tori
+  BVHNode(const Torus& first, const Torus& second) noexcept;
 
-  const Torus& first() const noexcept;   // first primitive
-  const Torus& second() const noexcept;  // second primitive
+  const Torus& first() const noexcept;
+  const Torus& second() const noexcept;
 
-  const std::array<Torus, 2>& primitives() const noexcept;  // both primitives
+  const std::array<Torus, 2>& primitives() const noexcept;
+  const AABB& bounds() const noexcept;
 
-  const AABB& bounds() const noexcept;  // enclosing box
+  bool hit(const Ray& ray,
+           HitRecord& hitRecord,
+           double tMin = 1e-4,  // self hit (to be ignored)
+           double tMax = std::numeric_limits<double>::infinity())
+      const noexcept;  // chose then object which was hit first
 
  private:
-  std::array<Torus, 2> primitives_;  // 2 tori
-  AABB bounds_;                      // bounding box
+  std::array<Torus, 2> primitives_;
+  AABB bounds_;
 };
 
 }  // namespace torirender

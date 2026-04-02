@@ -1,0 +1,112 @@
+{
+  "camera": {
+    "look_from": [0.0, 1.0, 2.0], 
+    "look_at": [0.0, 0.0, -3.0], 
+    "view_up": [0.0, 1.0, 0.0], 
+
+    "vfov": 60.0,
+
+    "image_width": 640,
+    "image_height": 360, 
+  
+    "max_depth": 2, 
+
+    "samples_per_pixel": 2, 
+
+    "rng_seed": 1337 
+  },
+
+  "torus_primary": {
+    "major_radius": 1.12,
+    "minor_radius": 0.34, 
+
+    "center": [-0.35, -0.88, -3.45],
+
+    "axis": "y",
+
+    "material": {
+      "type": "metal",
+
+      "base_color": [1.0, 0.766, 0.336], 
+      "specular_color": [0.95, 0.95, 0.95], 
+
+      "ambient": 0.03, 
+      "diffuse": 0.10, 
+
+      "specular": 1.0, 
+      "shininess": 260.0, 
+
+      "fuzz": 0.05
+    }
+  },
+
+  "torus_secondary": {
+    "major_radius": 0.95,
+    "minor_radius": 0.31,
+
+    "center": [1.11, -0.2056507013, -3.09], 
+
+    "axis": "custom",
+    "axis_direction": [0.58, 0.67, 0.46], 
+
+    "material": {
+      "type": "metal",
+
+      "base_color": [0.95, 0.95, 0.95], 
+
+      "specular_color": [1.0, 1.0, 1.0], 
+
+      "ambient": 0.03,
+      "diffuse": 0.1,
+
+      "specular": 1.0,
+      "shininess": 260.0,
+
+      "fuzz": 0.01
+    }
+  },
+
+  "scene": {
+    "light_direction": [-0.34, 1.0, -0.25], 
+
+    "background_low": [0.18, 0.22, 0.32], 
+    "background_high": [0.78, 0.88, 1.0], 
+
+    "floor_y": -1.22, 
+
+    "floor_checker_scale": 1.35, 
+
+    "floor_light_material": {
+      "type": "diffuse",
+
+      "base_color": [0.88, 0.88, 0.90],
+
+      "specular_color": [0.95, 0.95, 0.95],
+
+      "ambient": 0.08,
+      "diffuse": 0.72,
+
+      "specular": 0.12,
+      "shininess": 38.0,
+
+      "reflection": 0.13
+    },
+
+    "floor_dark_material": {
+      "type": "diffuse",
+
+      "base_color": [0.04, 0.04, 0.05], 
+
+      "specular_color": [0.55, 0.55, 0.58],
+
+      "ambient": 0.03,
+      "diffuse": 0.58,
+
+      "specular": 0.08,
+      "shininess": 28.0,
+
+      "reflection": 0.03
+      
+    }
+  }
+}

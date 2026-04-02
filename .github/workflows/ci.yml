@@ -1,4 +1,4 @@
-name: Ray-Tracing CI
+name: TORI-RENDER CI
 
 on:
   push:

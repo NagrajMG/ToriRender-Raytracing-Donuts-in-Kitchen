@@ -111,21 +111,22 @@ int Camera::imageHeight() const noexcept {
   return imageHeight_;
 }
 
-Ray Camera::getRay(int pixelX, int pixelY) const noexcept {
-  const int i = std::clamp(pixelX, 0, imageWidth_ - 1);
-  const int j = std::clamp(pixelY, 0, imageHeight_ - 1);
+Ray Camera::getRay(double pixelX, double pixelY) const noexcept {
+  const double i = std::clamp(pixelX, 0.0, static_cast<double>(imageWidth_ - 1));
+  const double j = std::clamp(pixelY, 0.0, static_cast<double>(imageHeight_ - 1));
 
-  // iterating the centers
-  const Vec3 pixelCenter = pixel00Loc_ + (static_cast<double>(i) * pixelDeltaU_) +
-                           (static_cast<double>(j) * pixelDeltaV_);
+  const Vec3 pixelCenter = pixel00Loc_ + (i * pixelDeltaU_) + (j * pixelDeltaV_);
 
-  Vec3 direction = pixelCenter - origin_;  // ray direction to the center of the pixel on the image
-
+  Vec3 direction = pixelCenter - origin_;
   if (direction.nearZero()) {
-    direction = -w_;  // fallback
+    direction = -w_;
   }
 
-  return Ray(origin_, direction.normalized());  // normalized ray
+  return Ray(origin_, direction.normalized());
+}
+
+Ray Camera::getRay(int pixelX, int pixelY) const noexcept {
+  return getRay(static_cast<double>(pixelX), static_cast<double>(pixelY));
 }
 
 }  // namespace torirender

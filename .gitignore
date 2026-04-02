@@ -110,14 +110,8 @@ Desktop.ini
 __pycache__/
 *.py[cod]
 
-# ------------------------------
-# Common runtime/output folders
-# ------------------------------
-/output/
-/outputs/
-/renders/
-/results/
-
 build_local
 build_tests
 build
+
+torirender_report.txt

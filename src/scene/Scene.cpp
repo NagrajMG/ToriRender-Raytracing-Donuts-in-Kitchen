@@ -1,0 +1,268 @@
+#include "scene/Scene.hpp"
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <string>
+
+namespace torirender {
+
+namespace {
+
+// convert string to lowercase
+std::string toLower(std::string text) {
+  for (char& c : text) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return text;
+}
+
+// parse axis string to enum
+TorusAxis parseAxis(const std::string& axisToken) noexcept {
+  const std::string axis = toLower(axisToken);
+  if (axis == "x")
+    return TorusAxis::X;
+  if (axis == "z")
+    return TorusAxis::Z;
+  return TorusAxis::Y;
+}
+
+// build torus from config (custom axis supported)
+Torus buildTorus(const TorusConfig& config) noexcept {
+  if (config.hasAxisDirection) {
+    return Torus(config.majorRadius, config.minorRadius, config.center, config.axisDirection);
+  }
+  return Torus(config.majorRadius, config.minorRadius, config.center, parseAxis(config.axis));
+}
+
+// parse material type
+Scene::MaterialType parseMaterialType(const std::string& token) noexcept {
+  const std::string type = toLower(token);
+  if (type == "metal")
+    return Scene::MaterialType::Metal;
+  return Scene::MaterialType::Diffuse;
+}
+
+// reflect vector
+Vec3 reflect(const Vec3& direction, const Vec3& normal) noexcept {
+  return direction - (2.0 * dot(direction, normal) * normal);
+}
+
+// simple hash to [0,1]
+double hash01(const Vec3& seed, double offset) noexcept {
+  const Vec3 q = seed + Vec3(offset, offset * 1.7, offset * 2.3);
+  const double s = std::sin(dot(q, Vec3(12.9898, 78.233, 37.719))) * 43758.5453123;
+  return s - std::floor(s);
+}
+
+// random unit vector (used for fuzz)
+Vec3 randomUnitVector(const Vec3& seed, int depth) noexcept {
+  constexpr double kTwoPi = 6.283185307179586476925286766559;
+  const double u = hash01(seed, 7.0 + static_cast<double>(depth) * 0.31);
+  const double v = hash01(seed, 31.0 + static_cast<double>(depth) * 0.17);
+  const double azimuth = kTwoPi * u;
+  const double z = (2.0 * v) - 1.0;
+  const double r = std::sqrt(std::max(0.0, 1.0 - (z * z)));
+  return Vec3(r * std::cos(azimuth), z, r * std::sin(azimuth));
+}
+
+// component-wise multiply
+Vec3 multiply(const Vec3& a, const Vec3& b) noexcept {
+  return Vec3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
+// convert config to runtime
+Scene::Material makeMaterial(const MaterialConfig& config) noexcept {
+  Scene::Material material{};
+  material.type = parseMaterialType(config.type);
+  material.baseColor = config.baseColor;
+  material.phong.ambientStrength = config.ambient;
+  material.phong.diffuseStrength = config.diffuse;
+  material.phong.specularStrength = config.specular;
+  material.phong.shininess = config.shininess;
+  material.phong.specularColor = config.specularColor;
+  material.reflection = config.reflection;
+  material.fuzz = std::max(0.0, std::min(1.0, config.fuzz));
+  return material;
+}
+
+}  // namespace
+
+// default scene
+Scene::Scene() noexcept : Scene(defaultSceneConfig()) {
+}
+
+// build full scene
+Scene::Scene(const SceneConfig& config) noexcept
+    : torusA_(buildTorus(config.torusPrimary)),
+      torusB_(buildTorus(config.torusSecondary)),
+      bvh_(torusA_, torusB_),
+      shader_(),
+      lightDirection_(config.lightDirection.normalized()),
+      backgroundLow_(config.backgroundLow),
+      backgroundHigh_(config.backgroundHigh),
+      floorY_(config.floorY),
+      floorCheckerScale_(config.floorCheckerScale),
+      torusMaterialA_(makeMaterial(config.torusPrimary.material)),
+      torusMaterialB_(makeMaterial(config.torusSecondary.material)),
+      floorLightMaterial_(makeMaterial(config.floorLightMaterial)),
+      floorDarkMaterial_(makeMaterial(config.floorDarkMaterial)) {
+}
+
+// BVH hit test
+bool Scene::hit(const Ray& ray, HitRecord& hitRecord, double tMin, double tMax) const noexcept {
+  return bvh_.hit(ray, hitRecord, tMin, tMax);
+}
+
+// entry ray tracing
+Vec3 Scene::trace(const Ray& ray, int maxDepth) const noexcept {
+  const int depth = maxDepth;
+  return traceRecursive(ray, depth);
+}
+
+// recursive ray tracing
+Vec3 Scene::traceRecursive(const Ray& ray, int depth) const noexcept {
+  // test torus
+  HitRecord torusHit{};
+  const bool hitTorus = hit(ray, torusHit, 1e-4);
+
+  // test floor
+  HitRecord floorHit{};
+  const bool hitFloorSurface = hitFloor(
+      ray, floorHit, 1e-4, hitTorus ? torusHit.t : std::numeric_limits<double>::infinity());
+
+  // background if nothing hit
+  if (!hitTorus && !hitFloorSurface) {
+    return background(ray);
+  }
+
+  // choose closest hit
+  const bool useFloor = hitFloorSurface && (!hitTorus || floorHit.t < torusHit.t);
+  const HitRecord& hitRecord = useFloor ? floorHit : torusHit;
+
+  const Material material =
+      useFloor ? materialForFloorHit(hitRecord) : materialForTorusHit(hitRecord);
+
+  // local shading
+  const Vec3 viewDirection = (-ray.direction()).normalized();
+  const double visibility = directLightVisibility(hitRecord);
+
+  const Vec3 localShading = shader_.shade(material.baseColor,
+                                          hitRecord.normal,
+                                          lightDirection_,
+                                          viewDirection,
+                                          material.phong,
+                                          visibility,
+                                          material.type == MaterialType::Metal);
+
+  // stop recursion
+  if (depth <= 0) {
+    return localShading;
+  }
+
+  // metal reflection
+  if (material.type == MaterialType::Metal) {
+    Vec3 reflectedDirection = reflect(ray.direction().normalized(), hitRecord.normal).normalized();
+
+    // add fuzz
+    reflectedDirection =
+        (reflectedDirection + (material.fuzz * randomUnitVector(hitRecord.point, depth)))
+            .normalized();
+
+    // invalid reflection
+    if (dot(reflectedDirection, hitRecord.normal) <= 0.0) {
+      return 0.25 * localShading;
+    }
+
+    const Ray scattered(hitRecord.point + (1e-4 * hitRecord.normal), reflectedDirection);
+    const Vec3 bounced = traceRecursive(scattered, depth - 1);
+
+    // blend reflection
+    return (0.12 * localShading) + (0.88 * multiply(material.baseColor, bounced));
+  }
+
+  // diffuse + reflection mix
+  const double reflection = std::max(0.0, std::min(1.0, material.reflection));
+  if (reflection <= 0.0) {
+    return localShading;
+  }
+
+  const Vec3 reflectedDirection =
+      reflect(ray.direction().normalized(), hitRecord.normal).normalized();
+
+  const Ray reflectedRay(hitRecord.point + (1e-4 * hitRecord.normal), reflectedDirection);
+  const Vec3 reflectedColor = traceRecursive(reflectedRay, depth - 1);
+
+  return ((1.0 - reflection) * localShading) + (reflection * reflectedColor);
+}
+
+// sky gradient
+Vec3 Scene::background(const Ray& ray) const noexcept {
+  const double blend = 0.5 * (ray.direction().normalized().y + 1.0);
+  return ((1.0 - blend) * backgroundLow_) + (blend * backgroundHigh_);
+}
+
+// shadow ray
+double Scene::directLightVisibility(const HitRecord& hitRecord) const noexcept {
+  const Vec3 shadowDirection = lightDirection_.normalized();
+  if (shadowDirection.nearZero()) {
+    return 1.0;
+  }
+
+  const double offsetSign = dot(shadowDirection, hitRecord.normal) >= 0.0 ? 1.0 : -1.0;
+
+  const Ray shadowRay(hitRecord.point + ((1e-4 * offsetSign) * hitRecord.normal), shadowDirection);
+
+  // blocked by torus
+  HitRecord torusBlocker{};
+  if (hit(shadowRay, torusBlocker, 1e-4, std::numeric_limits<double>::infinity())) {
+    return 0.0;
+  }
+
+  // blocked by floor
+  HitRecord floorBlocker{};
+  if (hitFloor(shadowRay, floorBlocker, 1e-4, std::numeric_limits<double>::infinity())) {
+    return 0.0;
+  }
+
+  return 1.0;
+}
+
+// ray-plane intersection (floor)
+bool Scene::hitFloor(const Ray& ray,
+                     HitRecord& hitRecord,
+                     double tMin,
+                     double tMax) const noexcept {
+  const double dy = ray.direction().y;
+  if (std::fabs(dy) <= 1e-12) {
+    return false;
+  }
+
+  const double t = (floorY_ - ray.origin().y) / dy;
+  if (t <= tMin || t >= tMax) {
+    return false;
+  }
+
+  hitRecord.t = t;
+  hitRecord.point = ray.at(t);
+  hitRecord.setFaceNormal(ray, Vec3(0.0, 1.0, 0.0));
+
+  return true;
+}
+
+// choose closest torus material
+Scene::Material Scene::materialForTorusHit(const HitRecord& hitRecord) const noexcept {
+  const double dA = std::fabs(torusA_.evaluate(hitRecord.point));
+  const double dB = std::fabs(torusB_.evaluate(hitRecord.point));
+  return dA <= dB ? torusMaterialA_ : torusMaterialB_;
+}
+
+// checkerboard floor
+Scene::Material Scene::materialForFloorHit(const HitRecord& hitRecord) const noexcept {
+  const int tx = static_cast<int>(std::floor(hitRecord.point.x * floorCheckerScale_));
+  const int tz = static_cast<int>(std::floor(hitRecord.point.z * floorCheckerScale_));
+  const bool lightTile = ((tx + tz) & 1) == 0;
+  return lightTile ? floorLightMaterial_ : floorDarkMaterial_;
+}
+
+}  // namespace torirender

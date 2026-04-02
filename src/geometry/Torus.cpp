@@ -7,13 +7,45 @@ namespace torirender {
 
 namespace {
 
-// ensure radius is positive and non-zero
+// ensure radii are positive and non-zero
 double absoluteRadius(double value) noexcept {
   return std::max(std::fabs(value), math::kEpsilon);
 }
 
+// convert enum axis to corresponding axis vector
+Vec3 axisFromEnum(TorusAxis axis) noexcept {
+  switch (axis) {
+    case TorusAxis::X:
+      return Vec3(1.0, 0.0, 0.0);
+    case TorusAxis::Y:
+      return Vec3(0.0, 1.0, 0.0);
+    case TorusAxis::Z:
+      return Vec3(0.0, 0.0, 1.0);
+  }
+  return Vec3(0.0, 1.0, 0.0);  // defaulter is Y
+}
+
+// normalize axis, fallback if invalid
+Vec3 normalizedAxis(const Vec3& axisDirection) noexcept {
+  if (axisDirection.nearZero()) {
+    return Vec3(0.0, 1.0, 0.0);
+  }
+  return axisDirection.normalized();
+}
+
+// map arbitrary direction to closest principal axis
+TorusAxis closestPrincipalAxis(const Vec3& direction) noexcept {
+  const Vec3 absDir(std::fabs(direction.x), std::fabs(direction.y), std::fabs(direction.z));
+  if (absDir.x >= absDir.y && absDir.x >= absDir.z)
+    return TorusAxis::X;
+  if (absDir.z >= absDir.x && absDir.z >= absDir.y)
+    return TorusAxis::Z;
+  return TorusAxis::Y;
+}
+
 }  // namespace
 
+// convert classification enum to string
 const char* toString(PointClassification classification) noexcept {
   switch (classification) {
     case PointClassification::Inside:
@@ -26,14 +58,29 @@ const char* toString(PointClassification classification) noexcept {
   return "UNKNOWN";
 }
 
-// construct torus
+// constructor using enum axis
 Torus::Torus(double majorRadius, double minorRadius, const Vec3& center, TorusAxis axis) noexcept
     : majorRadius_(absoluteRadius(majorRadius)),
       minorRadius_(absoluteRadius(minorRadius)),
       center_(center),
-      axis_(axis) {
+      axis_(axis),
+      axisDirection_(axisFromEnum(axis)) {
 }
 
+// constructor using arbitrary axis direction
+Torus::Torus(double majorRadius,
+             double minorRadius,
+             const Vec3& center,
+             const Vec3& axisDirection) noexcept
+    : majorRadius_(absoluteRadius(majorRadius)),
+      minorRadius_(absoluteRadius(minorRadius)),
+      center_(center),
+      axis_(TorusAxis::Y),
+      axisDirection_(normalizedAxis(axisDirection)) {
+  axis_ = closestPrincipalAxis(axisDirection_);
+}
+
+// getters
 double Torus::majorRadius() const noexcept {
   return majorRadius_;
 }
@@ -46,36 +93,28 @@ const Vec3& Torus::center() const noexcept {
 TorusAxis Torus::axis() const noexcept {
   return axis_;
 }
-
-// distance squared from axis plane
-double Torus::perpendicularSquared(const Vec3& localPoint) const noexcept {
-  switch (axis_) {
-    case TorusAxis::X:
-      return localPoint.y * localPoint.y + localPoint.z * localPoint.z;
-    case TorusAxis::Y:
-      return localPoint.x * localPoint.x + localPoint.z * localPoint.z;
-    case TorusAxis::Z:
-      return localPoint.x * localPoint.x + localPoint.y * localPoint.y;
-  }
-  return 0.0;
+const Vec3& Torus::axisDirection() const noexcept {
+  return axisDirection_;
 }
 
-// implicit torus equation function value if i put the point
+// squared distance from axis (used in torus equation)
+double Torus::perpendicularSquared(const Vec3& localPoint) const noexcept {
+  const double radialSquared = localPoint.lengthSquared();
+  const double axial = dot(localPoint, axisDirection_);
+  return std::max(0.0, radialSquared - (axial * axial));
+}
+
+// implicit torus function F(p)
 double Torus::evaluate(const Vec3& point) const noexcept {
   const Vec3 localPoint = point - center_;
-
-  const double x2 = localPoint.x * localPoint.x;
-  const double y2 = localPoint.y * localPoint.y;
-  const double z2 = localPoint.z * localPoint.z;
-
-  const double s = x2 + y2 + z2 + majorRadius_ * majorRadius_ - minorRadius_ * minorRadius_;
+  const double s =
+      localPoint.lengthSquared() + (majorRadius_ * majorRadius_) - (minorRadius_ * minorRadius_);
   return (s * s) - (4.0 * majorRadius_ * majorRadius_ * perpendicularSquared(localPoint));
 }
 
-// inside / on / outside
+// classify point using implicit function
 PointClassification Torus::classify(const Vec3& point, double epsilon) const noexcept {
   const double value = evaluate(point);
-
   if (value > epsilon)
     return PointClassification::Outside;
   if (value < -epsilon)
@@ -83,49 +122,35 @@ PointClassification Torus::classify(const Vec3& point, double epsilon) const noe
   return PointClassification::On;
 }
 
-// gradient of implicit function
+// gradient of implicit function (used for normal)
 Vec3 Torus::gradient(const Vec3& point) const noexcept {
   const Vec3 localPoint = point - center_;
-  const double x = localPoint.x;
-  const double y = localPoint.y;
-  const double z = localPoint.z;
+  const double radiusSquared = majorRadius_ * majorRadius_;
+  const double s = localPoint.lengthSquared() + radiusSquared - (minorRadius_ * minorRadius_);
 
-  const double s =
-      localPoint.lengthSquared() + majorRadius_ * majorRadius_ - minorRadius_ * minorRadius_;
-  const double common = s - (2.0 * majorRadius_ * majorRadius_);
+  const double axial = dot(localPoint, axisDirection_);
+  const Vec3 radialComponent = localPoint - (axial * axisDirection_);
 
-  switch (axis_) {
-    case TorusAxis::X:
-      return Vec3(4 * x * s, 4 * y * common, 4 * z * common);
-    case TorusAxis::Y:
-      return Vec3(4 * x * common, 4 * y * s, 4 * z * common);
-    case TorusAxis::Z:
-      return Vec3(4 * x * common, 4 * y * common, 4 * z * s);
-  }
-  return Vec3{};
+  return (4.0 * s * localPoint) - (8.0 * radiusSquared * radialComponent);
 }
 
-// unit normal
+// normalized surface normal
 Vec3 Torus::normal(const Vec3& point, double epsilon) const noexcept {
   return gradient(point).normalized(epsilon);
 }
 
-// bounding box
+// bounding box of torus
 AABB Torus::bounds() const noexcept {
-  const double majorExtent = majorRadius_ + minorRadius_;
+  const Vec3& a = axisDirection_;
 
-  Vec3 extent;
-  switch (axis_) {
-    case TorusAxis::X:
-      extent = Vec3(minorRadius_, majorExtent, majorExtent);
-      break;
-    case TorusAxis::Y:
-      extent = Vec3(majorExtent, minorRadius_, majorExtent);
-      break;
-    case TorusAxis::Z:
-      extent = Vec3(majorExtent, majorExtent, minorRadius_);
-      break;
-  }
+  const double extentX =
+      (majorRadius_ * std::sqrt(std::max(0.0, 1.0 - (a.x * a.x)))) + minorRadius_;
+  const double extentY =
+      (majorRadius_ * std::sqrt(std::max(0.0, 1.0 - (a.y * a.y)))) + minorRadius_;
+  const double extentZ =
+      (majorRadius_ * std::sqrt(std::max(0.0, 1.0 - (a.z * a.z)))) + minorRadius_;
+
+  const Vec3 extent(extentX, extentY, extentZ);
 
   return AABB(center_ - extent, center_ + extent);
 }
