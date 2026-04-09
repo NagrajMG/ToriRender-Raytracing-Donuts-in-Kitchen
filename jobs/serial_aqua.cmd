@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-# Some site profile scripts reference these without guarding under nounset.
+# Some site profile scripts reference this without guarding under nounset.
 export COLORTERM="${COLORTERM-}"
 
 if [[ -z "${PBS_O_WORKDIR:-}" ]]; then
@@ -37,9 +37,13 @@ RUN_TS="${RUN_DATE}_time_${RUN_TIME}"
 RUN_ID="aqua_serial_${RUN_TS}"
 
 PBS_LOG="${LOG_DIR_WORK}/${RUN_ID}.pbs.log"
-RENDER_STDOUT_LOG="logs/${RUN_ID}.stdout.log"
-RENDER_STDERR_LOG="logs/${RUN_ID}.stderr.log"
-RUN_SUMMARY_LOG="results/aqua_serial_runs.log"
+RENDER_STDOUT_LOG_REL="logs/${RUN_ID}.stdout.log"
+RENDER_STDERR_LOG_REL="logs/${RUN_ID}.stderr.log"
+RUN_SUMMARY_LOG_REL="results/aqua_serial_runs.log"
+
+CONFIG_PATH="config/scene.json"
+OUTPUT_DIR_NAME="output"
+METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics.csv"
 
 cleanup_scheduler_wrappers() {
   rm -f \
@@ -51,7 +55,7 @@ cleanup_scheduler_wrappers() {
 }
 trap cleanup_scheduler_wrappers EXIT
 
-# Route full job-script output to a deterministic per-run PBS log.
+# Route full job-script output to deterministic per-run PBS log.
 exec >"${PBS_LOG}" 2>&1
 
 echo "AQuA serial job started"
@@ -59,10 +63,6 @@ echo "job_id=${JOB_ID_FULL}"
 echo "workdir=${WORKDIR}"
 echo "scratch_job_dir=${SCRATCH_JOB_DIR}"
 echo "pbs_log=${PBS_LOG}"
-
-CONFIG_PATH="config/scene.json"
-OUTPUT_DIR_NAME="output"
-METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics.csv"
 
 mkdir -p "${SCRATCH_JOB_DIR}"
 
@@ -82,7 +82,6 @@ fi
 cd "${SCRATCH_REPO}"
 mkdir -p logs results output
 
-# Safely source shell init fragments that may assume unset vars are allowed.
 safe_source() {
   local file="$1"
   if [[ -f "${file}" ]]; then
@@ -94,12 +93,8 @@ safe_source() {
 }
 
 # Try to initialize modules in non-interactive PBS shell.
-if [[ -f /etc/profile.d/modules.sh ]]; then
-  safe_source /etc/profile.d/modules.sh
-fi
-if [[ -f /usr/share/Modules/init/bash ]]; then
-  safe_source /usr/share/Modules/init/bash
-fi
+safe_source /etc/profile.d/modules.sh
+safe_source /usr/share/Modules/init/bash
 
 # If tools are missing, attempt to load common module names.
 if ! command -v cmake >/dev/null 2>&1 || ! command -v c++ >/dev/null 2>&1; then
@@ -113,16 +108,8 @@ if ! command -v cmake >/dev/null 2>&1 || ! command -v c++ >/dev/null 2>&1; then
   fi
 fi
 
-before_lines=0
-if [[ -f "${METRICS_CSV_REL}" ]]; then
-  before_lines="$(wc -l < "${METRICS_CSV_REL}")"
-fi
-
-status=0
-elapsed_seconds=0
 CMAKE_BIN=""
 CXX_BIN=""
-
 if command -v cmake >/dev/null 2>&1; then
   CMAKE_BIN="$(command -v cmake)"
 elif command -v cmake3 >/dev/null 2>&1; then
@@ -138,30 +125,41 @@ fi
 echo "cmake_bin=${CMAKE_BIN:-missing}"
 echo "cxx_bin=${CXX_BIN:-missing}"
 
+before_lines=0
+if [[ -f "${METRICS_CSV_REL}" ]]; then
+  before_lines="$(wc -l < "${METRICS_CSV_REL}")"
+fi
+
+status=0
+elapsed_seconds=0
+
 if [[ -z "${CMAKE_BIN}" ]]; then
   status=127
-  : >"${RENDER_STDOUT_LOG}"
+  : >"${RENDER_STDOUT_LOG_REL}"
   {
     echo "cmake not found in PATH."
     echo "On AQuA, load one of:"
     echo "  module load cmake3.30"
     echo "  module load cmake3.26"
-  } >"${RENDER_STDERR_LOG}"
+  } >"${RENDER_STDERR_LOG_REL}"
 elif [[ -z "${CXX_BIN}" ]]; then
   status=127
-  : >"${RENDER_STDOUT_LOG}"
+  : >"${RENDER_STDOUT_LOG_REL}"
   {
     echo "C++ compiler driver (c++) not found in PATH."
     echo "Load a compiler module before qsub, for example:"
     echo "  module load gcc13.3.0"
     echo "  module load gcc12.3.0"
-  } >"${RENDER_STDERR_LOG}"
+  } >"${RENDER_STDERR_LOG_REL}"
 else
   set +e
   "${CMAKE_BIN}" -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DTORIRENDER_ENABLE_MPI=OFF \
-    -DTORIRENDER_ENABLE_OPENMP=OFF
+    -DTORIRENDER_ENABLE_OPENMP=OFF \
+    -DTORIRENDER_BUILD_TESTS=OFF \
+    -DTORIRENDER_FETCH_CATCH2=OFF \
+    -DTORIRENDER_FETCH_STB=OFF
   status=$?
   set -e
 fi
@@ -176,15 +174,15 @@ fi
 if [[ ${status} -eq 0 ]]; then
   start_epoch="$(date +%s)"
   set +e
-  ./build/render_scene "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" >"${RENDER_STDOUT_LOG}" 2>"${RENDER_STDERR_LOG}"
+  ./build/render_scene "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
   status=$?
   set -e
   end_epoch="$(date +%s)"
   elapsed_seconds="$((end_epoch - start_epoch))"
 else
-  : >"${RENDER_STDOUT_LOG}"
-  if [[ ! -s "${RENDER_STDERR_LOG}" ]]; then
-    printf 'Build/configure failed before renderer execution.\n' >"${RENDER_STDERR_LOG}"
+  : >"${RENDER_STDOUT_LOG_REL}"
+  if [[ ! -s "${RENDER_STDERR_LOG_REL}" ]]; then
+    printf 'Build/configure failed before renderer execution.\n' >"${RENDER_STDERR_LOG_REL}"
   fi
 fi
 
@@ -215,10 +213,10 @@ fi
   echo "output_dir=${OUTPUT_DIR_NAME}"
   echo "metrics_csv=${METRICS_CSV_REL}"
   echo "csv_appended=${csv_appended}"
-  echo "stdout_log=${RENDER_STDOUT_LOG}"
-  echo "stderr_log=${RENDER_STDERR_LOG}"
+  echo "stdout_log=${RENDER_STDOUT_LOG_REL}"
+  echo "stderr_log=${RENDER_STDERR_LOG_REL}"
   echo "---"
-} >>"${RUN_SUMMARY_LOG}"
+} >>"${RUN_SUMMARY_LOG_REL}"
 
 if command -v rsync >/dev/null 2>&1; then
   rsync -a "${SCRATCH_REPO}/logs/" "${LOG_DIR_WORK}/"
@@ -245,4 +243,3 @@ fi
 rm -rf "${SCRATCH_JOB_DIR}"
 echo "AQuA serial run completed successfully."
 echo "Outputs copied back to: ${WORKDIR}"
-

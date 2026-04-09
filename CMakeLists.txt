@@ -82,7 +82,11 @@ endif()
 
 # JSON dependency is for scene/config handling.
 find_package(nlohmann_json QUIET)
-if(nlohmann_json_FOUND)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/nlohmann/json.hpp")
+    target_include_directories(torirender_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
+    target_compile_definitions(torirender_core PUBLIC TORIRENDER_HAS_JSON=1)
+    message(STATUS "Using vendored nlohmann/json.hpp from third_party.")
+elseif(nlohmann_json_FOUND)
     target_link_libraries(torirender_core PUBLIC nlohmann_json::nlohmann_json)
     target_compile_definitions(torirender_core PUBLIC TORIRENDER_HAS_JSON=1)
 else()
