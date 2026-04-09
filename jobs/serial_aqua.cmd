@@ -99,7 +99,7 @@ safe_source /usr/share/Modules/init/bash
 # If tools are missing, attempt to load common module names.
 if ! command -v cmake >/dev/null 2>&1 || ! command -v c++ >/dev/null 2>&1; then
   if command -v module >/dev/null 2>&1; then
-    for cmake_mod in cmake cmake3.30 cmake3.26 cmake3.20 cmake3.18 cmake3.14; do
+    for cmake_mod in cmake3.26 cmake3.20 cmake3.18 cmake3.14 cmake3.30 cmake; do
       module load "${cmake_mod}" >/dev/null 2>&1 && break
     done
     for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640 gcc; do
@@ -107,6 +107,18 @@ if ! command -v cmake >/dev/null 2>&1 || ! command -v c++ >/dev/null 2>&1; then
     done
   fi
 fi
+
+is_working_cmake() {
+  local cmake_bin="$1"
+  if [[ -z "${cmake_bin}" ]]; then
+    return 1
+  fi
+  set +e
+  "${cmake_bin}" --version >/dev/null 2>&1
+  local status=$?
+  set -e
+  return "${status}"
+}
 
 CMAKE_BIN=""
 CXX_BIN=""
@@ -120,6 +132,23 @@ if command -v c++ >/dev/null 2>&1; then
   CXX_BIN="$(command -v c++)"
 elif command -v g++ >/dev/null 2>&1; then
   CXX_BIN="$(command -v g++)"
+fi
+
+# Some cmake builds on AQuA may exist in PATH but fail at runtime (missing libcrypto.so.1.1).
+# Prefer a known-working cmake binary if the first candidate is not runnable.
+if ! is_working_cmake "${CMAKE_BIN}"; then
+  CMAKE_BIN=""
+  for candidate in \
+    /lfs/sware/cmake3.26/bin/cmake \
+    /lfs/sware/cmake3.20/bin/cmake \
+    /lfs/sware/cmake3.18/bin/cmake \
+    /lfs/sware/cmake3.14/bin/cmake \
+    /lfs/sware/cmake3.30/bin/cmake; do
+    if [[ -x "${candidate}" ]] && is_working_cmake "${candidate}"; then
+      CMAKE_BIN="${candidate}"
+      break
+    fi
+  done
 fi
 
 echo "cmake_bin=${CMAKE_BIN:-missing}"
