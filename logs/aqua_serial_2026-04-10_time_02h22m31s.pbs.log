@@ -1,0 +1,7 @@
+AQuA serial job started
+job_id=1727519.hn1
+workdir=/lfs/usrhome/btech/ce23b048/ToriRender
+scratch_job_dir=/lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727519
+pbs_log=/lfs/usrhome/btech/ce23b048/ToriRender/logs/aqua_serial_2026-04-10_time_02h22m31s.pbs.log
+Render job failed with status 127.
+Scratch retained at: /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727519

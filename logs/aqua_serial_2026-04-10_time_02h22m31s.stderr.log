@@ -1,0 +1,4 @@
+cmake not found in PATH.
+Load cmake before qsub, for example:
+  module avail cmake
+  module load cmake
