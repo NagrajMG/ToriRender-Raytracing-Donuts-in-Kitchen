@@ -1,0 +1,10 @@
+AQuA serial job started
+job_id=1727523.hn1
+workdir=/lfs/usrhome/btech/ce23b048/ToriRender
+scratch_job_dir=/lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727523
+pbs_log=/lfs/usrhome/btech/ce23b048/ToriRender/logs/aqua_serial_2026-04-10_time_03h18m37s.pbs.log
+cmake_bin=/lfs/sware/cmake3.30/bin/cmake
+cxx_bin=/lfs/sware/gcc13.3.0/bin/c++
+/lfs/sware/cmake3.30/bin/cmake: error while loading shared libraries: libcrypto.so.1.1: cannot open shared object file: No such file or directory
+Render job failed with status 127.
+Scratch retained at: /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727523

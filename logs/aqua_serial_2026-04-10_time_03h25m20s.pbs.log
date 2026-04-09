@@ -1,0 +1,74 @@
+AQuA serial job started
+job_id=1727524.hn1
+workdir=/lfs/usrhome/btech/ce23b048/ToriRender
+scratch_job_dir=/lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524
+pbs_log=/lfs/usrhome/btech/ce23b048/ToriRender/logs/aqua_serial_2026-04-10_time_03h25m20s.pbs.log
+cmake_bin=/lfs/sware/cmake3.26/bin/cmake
+cxx_bin=/lfs/sware/gcc13.3.0/bin/c++
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /lfs/sware/gcc13.3.0/bin/g++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Using vendored nlohmann/json.hpp from third_party.
+-- Configuring done (1.2s)
+-- Generating done (1.5s)
+-- Build files have been written to: /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524/repo/build
+-- Using vendored nlohmann/json.hpp from third_party.
+-- Configuring done (0.1s)
+-- Generating done (2.2s)
+-- Build files have been written to: /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524/repo/build
+-- Using vendored nlohmann/json.hpp from third_party.
+-- Configuring done (0.1s)
+-- Generating done (0.8s)
+-- Build files have been written to: /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524/repo/build
+[  6%] Building CXX object CMakeFiles/torirender_core.dir/src/math/Vec3.cpp.o
+[ 12%] Building CXX object CMakeFiles/torirender_core.dir/src/math/QuarticSolver.cpp.o
+[ 18%] Building CXX object CMakeFiles/torirender_core.dir/src/core/Ray.cpp.o
+[ 25%] Building CXX object CMakeFiles/torirender_core.dir/src/core/Camera.cpp.o
+[ 31%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/AABB.cpp.o
+[ 37%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/Torus.cpp.o
+[ 43%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/RayTorus.cpp.o
+[ 50%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/RayMarcher.cpp.o
+[ 56%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/BVH.cpp.o
+[ 62%] Building CXX object CMakeFiles/torirender_core.dir/src/io/Image.cpp.o
+[ 68%] Building CXX object CMakeFiles/torirender_core.dir/src/render/Shader.cpp.o
+[ 75%] Building CXX object CMakeFiles/torirender_core.dir/src/scene/SceneConfig.cpp.o
+In file included from /lfs/sware/gcc9.2.0/include/memory:80,
+                 from /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524/repo/third_party/nlohmann/json.hpp:29,
+                 from /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524/repo/src/scene/SceneConfig.cpp:8:
+/lfs/sware/gcc9.2.0/include/bits/unique_ptr.h:424:15: error: expected identifier before ‘__remove_cv’
+  424 |         using __remove_cv = typename remove_cv<_Up>::type;
+      |               ^~~~~~~~~~~
+/lfs/sware/gcc9.2.0/include/bits/unique_ptr.h:424:27: error: expected ‘(’ before ‘=’ token
+  424 |         using __remove_cv = typename remove_cv<_Up>::type;
+      |                           ^
+      |                           (
+/lfs/sware/gcc9.2.0/include/bits/unique_ptr.h:424:27: error: expected type-specifier before ‘=’ token
+/lfs/sware/gcc9.2.0/include/bits/unique_ptr.h:424:27: error: expected unqualified-id before ‘=’ token
+/lfs/sware/gcc9.2.0/include/bits/unique_ptr.h:430:69: error: wrong number of template arguments (1, should be 2)
+  430 |                     __not_<is_same<__remove_cv<_Tp>, __remove_cv<_Up>>> >;
+      |                                                                     ^~
+In file included from /lfs/sware/gcc9.2.0/include/bits/move.h:55,
+                 from /lfs/sware/gcc9.2.0/include/bits/stl_pair.h:59,
+                 from /lfs/sware/gcc9.2.0/include/bits/stl_algobase.h:64,
+                 from /lfs/sware/gcc9.2.0/include/bits/char_traits.h:39,
+                 from /lfs/sware/gcc9.2.0/include/string:40,
+                 from /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524/repo/include/scene/SceneConfig.hpp:4,
+                 from /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524/repo/src/scene/SceneConfig.cpp:1:
+/lfs/sware/gcc9.2.0/include/type_traits:1292:12: note: provided for ‘template<class, class> struct std::is_same’
+ 1292 |     struct is_same
+      |            ^~~~~~~
+/lfs/sware/gcc9.2.0/include/bits/unique_ptr.h:430:71: error: template argument 1 is invalid
+  430 |                     __not_<is_same<__remove_cv<_Tp>, __remove_cv<_Up>>> >;
+      |                                                                       ^
+/lfs/sware/gcc9.2.0/include/bits/unique_ptr.h:430:73: error: template argument 2 is invalid
+  430 |                     __not_<is_same<__remove_cv<_Tp>, __remove_cv<_Up>>> >;
+      |                                                                         ^
+gmake[3]: *** [CMakeFiles/torirender_core.dir/src/scene/SceneConfig.cpp.o] Error 1
+gmake[2]: *** [CMakeFiles/torirender_core.dir/all] Error 2
+gmake[1]: *** [CMakeFiles/render_scene.dir/rule] Error 2
+gmake: *** [render_scene] Error 2
+Render job failed with status 2.
+Scratch retained at: /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727524
