@@ -5,7 +5,6 @@
 #PBS -l walltime=02:00:00
 #PBS -j oe
 #PBS -o /dev/null
-#PBS -V
 
 set -euo pipefail
 
@@ -96,16 +95,15 @@ safe_source() {
 safe_source /etc/profile.d/modules.sh
 safe_source /usr/share/Modules/init/bash
 
-# If tools are missing, attempt to load common module names.
-if ! command -v cmake >/dev/null 2>&1 || ! command -v c++ >/dev/null 2>&1; then
-  if command -v module >/dev/null 2>&1; then
-    for cmake_mod in cmake3.26 cmake3.20 cmake3.18 cmake3.14 cmake3.30 cmake; do
-      module load "${cmake_mod}" >/dev/null 2>&1 && break
-    done
-    for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640 gcc; do
-      module load "${gcc_mod}" >/dev/null 2>&1 && break
-    done
-  fi
+# Load toolchain in a clean module environment.
+if command -v module >/dev/null 2>&1; then
+  module purge >/dev/null 2>&1 || true
+  for cmake_mod in cmake3.26 cmake3.20 cmake3.18 cmake3.14 cmake3.30 cmake; do
+    module load "${cmake_mod}" >/dev/null 2>&1 && break
+  done
+  for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640 gcc; do
+    module load "${gcc_mod}" >/dev/null 2>&1 && break
+  done
 fi
 
 is_working_cmake() {
@@ -154,6 +152,9 @@ fi
 echo "cmake_bin=${CMAKE_BIN:-missing}"
 echo "cxx_bin=${CXX_BIN:-missing}"
 
+# Prevent inherited include path overrides from selecting wrong libstdc++ headers.
+unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH || true
+
 before_lines=0
 if [[ -f "${METRICS_CSV_REL}" ]]; then
   before_lines="$(wc -l < "${METRICS_CSV_REL}")"
@@ -184,6 +185,7 @@ else
   set +e
   "${CMAKE_BIN}" -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_CXX_COMPILER="${CXX_BIN}" \
     -DTORIRENDER_ENABLE_MPI=OFF \
     -DTORIRENDER_ENABLE_OPENMP=OFF \
     -DTORIRENDER_BUILD_TESTS=OFF \
