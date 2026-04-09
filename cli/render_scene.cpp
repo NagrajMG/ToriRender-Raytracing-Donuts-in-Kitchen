@@ -29,7 +29,9 @@ struct RenderArgs {
 
 struct ResolvedOutputPaths {
   std::filesystem::path outputDir;
+  std::filesystem::path imagesDir;
   std::filesystem::path imagePath;
+  std::string imageFileName;
   std::filesystem::path metricsCsvPath;
 };
 
@@ -242,19 +244,83 @@ bool resolveOutputPaths(const RenderArgs& args,
     return false;
   }
 
-  outPaths.imagePath =
-      outPaths.outputDir / serialOutputFilename(width, height, samplesPerPixel, maxDepth);
+  outPaths.imagesDir = outPaths.outputDir / "images";
+  std::filesystem::create_directories(outPaths.imagesDir, ec);
+  if (ec) {
+    errorMessage = "Failed to create images directory: " + outPaths.imagesDir.string() + " (" +
+                   ec.message() + ")";
+    return false;
+  }
+
+  outPaths.imageFileName = serialOutputFilename(width, height, samplesPerPixel, maxDepth);
+  outPaths.imagePath = outPaths.imagesDir / outPaths.imageFileName;
   outPaths.metricsCsvPath = outPaths.outputDir / "render_metrics.csv";
   return true;
 }
 
 bool appendRenderMetricsCsv(const std::filesystem::path& csvPath,
+                            const std::string& imageFileName,
                             int width,
                             int height,
                             int samplesPerPixel,
                             int maxDepth,
                             double elapsedSeconds,
                             std::string& errorMessage) {
+  constexpr const char* kLegacyHeader = "resolution,ssp,depth,time_seconds";
+  constexpr const char* kCurrentHeader = "image_file,resolution,ssp,depth,time_seconds";
+
+  auto migrateLegacySchema = [&](const std::filesystem::path& path) -> bool {
+    std::ifstream input(path);
+    if (!input) {
+      errorMessage = "Failed to open metrics CSV for schema check: " + path.string();
+      return false;
+    }
+
+    std::string header;
+    if (!std::getline(input, header)) {
+      return true;
+    }
+
+    if (header == kCurrentHeader) {
+      return true;
+    }
+    if (header != kLegacyHeader) {
+      errorMessage = "Unrecognized metrics CSV header in " + path.string();
+      return false;
+    }
+
+    const std::filesystem::path tempPath = path.string() + ".tmp";
+    std::ofstream output(tempPath, std::ios::trunc);
+    if (!output) {
+      errorMessage = "Failed to open temporary metrics CSV file: " + tempPath.string();
+      return false;
+    }
+
+    output << kCurrentHeader << '\n';
+    std::string line;
+    while (std::getline(input, line)) {
+      if (line.empty()) {
+        continue;
+      }
+      output << "legacy_unknown.png," << line << '\n';
+    }
+
+    if (!output) {
+      errorMessage = "Failed while migrating legacy metrics CSV schema: " + path.string();
+      return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::rename(tempPath, path, ec);
+    if (ec) {
+      std::filesystem::remove(tempPath, ec);
+      errorMessage =
+          "Failed to replace legacy metrics CSV: " + path.string() + " (" + ec.message() + ")";
+      return false;
+    }
+    return true;
+  };
+
   bool writeHeader = true;
   std::error_code ec;
   if (std::filesystem::exists(csvPath, ec)) {
@@ -269,6 +335,10 @@ bool appendRenderMetricsCsv(const std::filesystem::path& csvPath,
           "Failed to query metrics CSV size: " + csvPath.string() + " (" + ec.message() + ")";
       return false;
     }
+
+    if (size > 0 && !migrateLegacySchema(csvPath)) {
+      return false;
+    }
     writeHeader = size == 0;
   }
 
@@ -279,11 +349,11 @@ bool appendRenderMetricsCsv(const std::filesystem::path& csvPath,
   }
 
   if (writeHeader) {
-    csv << "resolution,ssp,depth,time_seconds\n";
+    csv << kCurrentHeader << '\n';
   }
 
-  csv << width << 'x' << height << ',' << samplesPerPixel << ',' << maxDepth << ',' << std::fixed
-      << std::setprecision(6) << elapsedSeconds << '\n';
+  csv << imageFileName << ',' << width << 'x' << height << ',' << samplesPerPixel << ',' << maxDepth
+      << ',' << std::fixed << std::setprecision(6) << elapsedSeconds << '\n';
   if (!csv) {
     errorMessage = "Failed to write metrics CSV row: " + csvPath.string();
     return false;
@@ -377,6 +447,7 @@ int main(int argc, char** argv) {
   const auto renderEnd = std::chrono::steady_clock::now();
   const std::chrono::duration<double> elapsed = renderEnd - renderStart;
   if (!appendRenderMetricsCsv(outputPaths.metricsCsvPath,
+                              outputPaths.imageFileName,
                               width,
                               height,
                               samplesPerPixel,

@@ -1,7 +1,6 @@
-resolution,ssp,depth,time_seconds
-640x360,2,2,19.370499
-640x360,10,2,96.628813
-640x360,2,2,19.474428
-640x360,16,2,154.624202
-640x360,2,2,19.769646
-960x540,2,2,44.497435
+image_file,resolution,ssp,depth,time_seconds
+serial_640x360_ssp2_depth2.png,640x360,2,2,2.962565
+serial_640x360_ssp2_depth2.png,640x360,2,2,2.497677
+serial_640x360_ssp2_depth2.png,640x360,2,2,2.533681
+serial_640x360_ssp2_depth2.png,640x360,2,2,2.425409
+serial_640x360_ssp2_depth2.png,640x360,2,2,2.396225

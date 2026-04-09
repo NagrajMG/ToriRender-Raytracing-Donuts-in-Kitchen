@@ -2,6 +2,7 @@
 # Build directories and outputs
 # ------------------------------
 /build/
+build_serial_check
 /build-*/
 /cmake-build-*/
 /out/
@@ -60,16 +61,6 @@
 *.profdata
 *.lcov
 *.info
-
-# ------------------------------
-# Logs and temporary files
-# ------------------------------
-*.log
-*.tmp
-*.temp
-*.bak
-*.orig
-*.rej
 
 # ------------------------------
 # Editor / IDE metadata

@@ -62,7 +62,7 @@ Used for each torus and floor tiles.
 Run:
 
 ```bash
-./build/render_scene [config_path] [image_name] [output_dir]
+./build/render_scene [config_path] [output_dir]
 ```
 
 Output files:

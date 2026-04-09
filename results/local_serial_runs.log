@@ -1,0 +1,11 @@
+timestamp=2026-04-10_time_01h49m48s
+mode=local_serial
+status=0
+elapsed_seconds=3
+config_path=config/scene.json
+output_dir=output
+metrics_csv=/Users/copperhead07/IITM-Academics/ID5130/Github/ToriRender/output/render_metrics.csv
+csv_appended=yes
+stdout_log=/Users/copperhead07/IITM-Academics/ID5130/Github/ToriRender/logs/local_serial_2026-04-10_time_01h49m48s.stdout.log
+stderr_log=/Users/copperhead07/IITM-Academics/ID5130/Github/ToriRender/logs/local_serial_2026-04-10_time_01h49m48s.stderr.log
+---
