@@ -134,7 +134,7 @@ safe_source /usr/share/Modules/init/bash
 # Load toolchain in a clean module environment.
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
-  for cmake_mod in cmake3.26 cmake3.20 cmake3.18 cmake3.14 cmake3.30 cmake; do
+  for cmake_mod in cmake3.26 cmake3.20 cmake3.30 cmake; do
     module load "${cmake_mod}" >/dev/null 2>&1 && break
   done
   for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640 gcc; do
@@ -142,16 +142,35 @@ if command -v module >/dev/null 2>&1; then
   done
 fi
 
-is_working_cmake() {
+is_supported_cmake() {
   local cmake_bin="$1"
   if [[ -z "${cmake_bin}" ]]; then
     return 1
   fi
+
+  local version
   set +e
-  "${cmake_bin}" --version >/dev/null 2>&1
+  version="$("${cmake_bin}" --version 2>/dev/null | awk 'NR==1 {print $3}')"
   local status=$?
   set -e
-  return "${status}"
+  if [[ "${status}" -ne 0 || -z "${version}" ]]; then
+    return 1
+  fi
+
+  local major="${version%%.*}"
+  local rest="${version#*.}"
+  local minor="${rest%%.*}"
+  if [[ ! "${major}" =~ ^[0-9]+$ || ! "${minor}" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+
+  if ((major > 3)); then
+    return 0
+  fi
+  if ((major == 3 && minor >= 20)); then
+    return 0
+  fi
+  return 1
 }
 
 CMAKE_BIN=""
@@ -169,16 +188,15 @@ elif command -v g++ >/dev/null 2>&1; then
 fi
 
 # Some cmake builds on AQuA may exist in PATH but fail at runtime (missing libcrypto.so.1.1).
-# Prefer a known-working cmake binary if the first candidate is not runnable.
-if ! is_working_cmake "${CMAKE_BIN}"; then
+# Prefer a known-working cmake binary that also satisfies project minimum version.
+if ! is_supported_cmake "${CMAKE_BIN}"; then
   CMAKE_BIN=""
   for candidate in \
     /lfs/sware/cmake3.26/bin/cmake \
     /lfs/sware/cmake3.20/bin/cmake \
-    /lfs/sware/cmake3.18/bin/cmake \
-    /lfs/sware/cmake3.14/bin/cmake \
-    /lfs/sware/cmake3.30/bin/cmake; do
-    if [[ -x "${candidate}" ]] && is_working_cmake "${candidate}"; then
+    /lfs/sware/cmake3.30/bin/cmake \
+    /usr/local/bin/cmake; do
+    if [[ -x "${candidate}" ]] && is_supported_cmake "${candidate}"; then
       CMAKE_BIN="${candidate}"
       break
     fi
@@ -204,10 +222,10 @@ if [[ -z "${CMAKE_BIN}" ]]; then
   status=127
   : >"${RENDER_STDOUT_LOG_REL}"
   {
-    echo "cmake not found in PATH."
+    echo "Supported CMake (>= 3.20) not found in PATH."
     echo "On AQuA, load one of:"
-    echo "  module load cmake3.30"
     echo "  module load cmake3.26"
+    echo "  module load cmake3.20"
   } >"${RENDER_STDERR_LOG_REL}"
 elif [[ -z "${CXX_BIN}" ]]; then
   status=127
