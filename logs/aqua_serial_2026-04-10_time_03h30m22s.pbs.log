@@ -41,3 +41,5 @@ cxx_bin=/lfs/sware/gcc13.3.0/bin/c++
 [ 93%] Building CXX object CMakeFiles/render_scene.dir/cli/render_scene.cpp.o
 [100%] Linking CXX executable render_scene
 [100%] Built target render_scene
+AQuA serial run completed successfully.
+Outputs copied back to: /lfs/usrhome/btech/ce23b048/ToriRender
