@@ -53,6 +53,7 @@ RUN_TS="${RUN_DATE}_time_${RUN_TIME}"
 RUN_ID="aqua_serial_${RUN_TS}"
 
 PBS_LOG="${LOG_DIR_WORK}/${RUN_ID}.pbs.log"
+PBS_LOG_REL="logs/${RUN_ID}.pbs.log"
 RENDER_STDOUT_LOG_REL="logs/${RUN_ID}.stdout.log"
 RENDER_STDERR_LOG_REL="logs/${RUN_ID}.stderr.log"
 RUN_SUMMARY_LOG_REL="results/aqua_serial_runs.log"
@@ -96,9 +97,9 @@ exec >"${PBS_LOG}" 2>&1
 
 echo "AQuA serial job started"
 echo "job_id=${JOB_ID_FULL}"
-echo "workdir=${WORKDIR}"
-echo "scratch_job_dir=${SCRATCH_JOB_DIR}"
-echo "pbs_log=${PBS_LOG}"
+echo "workdir=[private]"
+echo "scratch_job_dir=[private]"
+echo "pbs_log=${PBS_LOG_REL}"
 
 mkdir -p "${SCRATCH_JOB_DIR}"
 
@@ -326,8 +327,8 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
   printf "  %-26s %ss\n" "Render Duration:" "${elapsed_seconds}"
   echo
   echo "[Paths and Outputs]"
-  printf "  %-26s %s\n" "Work Directory:" "${WORKDIR}"
-  printf "  %-26s %s\n" "Scratch Job Directory:" "${SCRATCH_JOB_DIR}"
+  printf "  %-26s %s\n" "Workspace:" "${REPO_NAME}"
+  printf "  %-26s %s\n" "Scratch:" "[private]"
   printf "  %-26s %s\n" "Config Path:" "${CONFIG_PATH}"
   printf "  %-26s %s\n" "Output Directory:" "${OUTPUT_DIR_NAME}"
   printf "  %-26s %s\n" "Metrics CSV:" "${METRICS_CSV_REL}"
@@ -335,7 +336,7 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
   printf "  %-26s %s\n" "Latest Metrics Row:" "${latest_metrics_row}"
   echo
   echo "[Logs]"
-  printf "  %-26s %s\n" "PBS Log:" "${PBS_LOG}"
+  printf "  %-26s %s\n" "PBS Log:" "${PBS_LOG_REL}"
   printf "  %-26s %s\n" "Render STDOUT:" "${RENDER_STDOUT_LOG_REL}"
   printf "  %-26s %s\n" "Render STDERR:" "${RENDER_STDERR_LOG_REL}"
   echo
@@ -350,11 +351,11 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
   echo "job_id=${JOB_ID_FULL}"
   echo "status=${status}"
   echo "elapsed_seconds=${elapsed_seconds}"
-  echo "pbs_log=${PBS_LOG}"
-  echo "workdir=${WORKDIR}"
-  echo "scratch_root=${SCRATCH_ROOT}"
-  echo "scratch_job_dir=${SCRATCH_JOB_DIR}"
-  echo "scratch_repo=${SCRATCH_REPO}"
+  echo "pbs_log=${PBS_LOG_REL}"
+  echo "workdir=[private]"
+  echo "scratch_root=[private]"
+  echo "scratch_job_dir=[private]"
+  echo "scratch_repo=[private]"
   echo "config_path=${CONFIG_PATH}"
   echo "output_dir=${OUTPUT_DIR_NAME}"
   echo "metrics_csv=${METRICS_CSV_REL}"
@@ -377,19 +378,19 @@ fi
 
 if [[ ${status} -ne 0 ]]; then
   echo "Render job failed with status ${status}."
-  echo "Scratch retained at: ${SCRATCH_JOB_DIR}"
-  echo "Run report: ${WORKDIR}/${RUN_REPORT_FILE_REL}"
+  echo "Scratch retained for debugging."
+  echo "Run report: ${RUN_REPORT_FILE_REL}"
   exit "${status}"
 fi
 
 if [[ "${csv_appended}" != "yes" ]]; then
   echo "Render completed but metrics CSV was not appended."
-  echo "Scratch retained at: ${SCRATCH_JOB_DIR}"
-  echo "Run report: ${WORKDIR}/${RUN_REPORT_FILE_REL}"
+  echo "Scratch retained for debugging."
+  echo "Run report: ${RUN_REPORT_FILE_REL}"
   exit 2
 fi
 
 rm -rf "${SCRATCH_JOB_DIR}"
 echo "AQuA serial run completed successfully."
-echo "Outputs copied back to: ${WORKDIR}"
-echo "Run report: ${WORKDIR}/${RUN_REPORT_FILE_REL}"
+echo "Outputs copied back to repo."
+echo "Run report: ${RUN_REPORT_FILE_REL}"

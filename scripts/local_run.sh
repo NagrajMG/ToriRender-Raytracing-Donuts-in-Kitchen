@@ -43,6 +43,17 @@ center_line() {
   printf '%*s%s%*s\n' "${left_padding}" '' "${text}" "${right_padding}" ''
 }
 
+display_path() {
+  local path="$1"
+  if [[ "${path}" == "${REPO_ROOT}/"* ]]; then
+    printf '%s' "${path#${REPO_ROOT}/}"
+  elif [[ "${path}" == /* ]]; then
+    printf '[private]'
+  else
+    printf '%s' "${path}"
+  fi
+}
+
 BUILD_DIR="${REPO_ROOT}/build"
 LOG_DIR="${REPO_ROOT}/logs"
 RESULTS_DIR="${REPO_ROOT}/results"
@@ -69,6 +80,11 @@ METRICS_CSV="${OUTPUT_PATH}/render_metrics.csv"
 RUN_REPORTS_DIR="${OUTPUT_PATH}/run_reports"
 RUN_REPORT="${RUN_REPORTS_DIR}/${RUN_ID}.txt"
 mkdir -p "${RUN_REPORTS_DIR}"
+
+METRICS_CSV_DISPLAY="$(display_path "${METRICS_CSV}")"
+STDOUT_LOG_DISPLAY="$(display_path "${STDOUT_LOG}")"
+STDERR_LOG_DISPLAY="$(display_path "${STDERR_LOG}")"
+RUN_REPORT_DISPLAY="$(display_path "${RUN_REPORT}")"
 
 # Snapshot CSV line count before running, to verify append behavior.
 before_lines=0
@@ -150,13 +166,13 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
   echo "[Inputs and Outputs]"
   printf "  %-26s %s\n" "Config Path:" "${CONFIG_PATH}"
   printf "  %-26s %s\n" "Output Directory:" "${OUTPUT_DIR}"
-  printf "  %-26s %s\n" "Metrics CSV:" "${METRICS_CSV}"
+  printf "  %-26s %s\n" "Metrics CSV:" "${METRICS_CSV_DISPLAY}"
   printf "  %-26s %s\n" "CSV Row Appended:" "${csv_status_text}"
   printf "  %-26s %s\n" "Latest Metrics Row:" "${latest_metrics_row}"
   echo
   echo "[Logs]"
-  printf "  %-26s %s\n" "Render STDOUT:" "${STDOUT_LOG}"
-  printf "  %-26s %s\n" "Render STDERR:" "${STDERR_LOG}"
+  printf "  %-26s %s\n" "Render STDOUT:" "${STDOUT_LOG_DISPLAY}"
+  printf "  %-26s %s\n" "Render STDERR:" "${STDERR_LOG_DISPLAY}"
   echo
   echo "${REPORT_DIVIDER}"
 } >"${RUN_REPORT}"
@@ -169,32 +185,33 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
   echo "elapsed_seconds=${elapsed_seconds}"
   echo "config_path=${CONFIG_PATH}"
   echo "output_dir=${OUTPUT_DIR}"
-  echo "metrics_csv=${METRICS_CSV}"
+  echo "metrics_csv=${METRICS_CSV_DISPLAY}"
   echo "csv_appended=${csv_appended}"
-  echo "stdout_log=${STDOUT_LOG}"
-  echo "stderr_log=${STDERR_LOG}"
+  echo "stdout_log=${STDOUT_LOG_DISPLAY}"
+  echo "stderr_log=${STDERR_LOG_DISPLAY}"
+  echo "run_report=${RUN_REPORT_DISPLAY}"
   echo "---"
 } >>"${RUN_SUMMARY_LOG}"
 
 # Propagate render failure with log pointers.
 if [[ ${status} -ne 0 ]]; then
   echo "Render failed. Check:"
-  echo "  ${STDOUT_LOG}"
-  echo "  ${STDERR_LOG}"
-  echo "  ${RUN_REPORT}"
+  echo "  ${STDOUT_LOG_DISPLAY}"
+  echo "  ${STDERR_LOG_DISPLAY}"
+  echo "  ${RUN_REPORT_DISPLAY}"
   exit "${status}"
 fi
 
 # Treat missing CSV append as workflow error.
 if [[ "${csv_appended}" != "yes" ]]; then
-  echo "Render completed but metrics CSV was not appended: ${METRICS_CSV}"
-  echo "Run report: ${RUN_REPORT}"
+  echo "Render completed but metrics CSV was not appended: ${METRICS_CSV_DISPLAY}"
+  echo "Run report: ${RUN_REPORT_DISPLAY}"
   exit 2
 fi
 
 # Success summary
 echo "Render completed."
-echo "  stdout: ${STDOUT_LOG}"
-echo "  stderr: ${STDERR_LOG}"
-echo "  metrics: ${METRICS_CSV}"
-echo "  report: ${RUN_REPORT}"
+echo "  stdout: ${STDOUT_LOG_DISPLAY}"
+echo "  stderr: ${STDERR_LOG_DISPLAY}"
+echo "  metrics: ${METRICS_CSV_DISPLAY}"
+echo "  report: ${RUN_REPORT_DISPLAY}"
