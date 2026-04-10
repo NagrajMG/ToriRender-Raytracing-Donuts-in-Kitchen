@@ -107,8 +107,16 @@ build
 
 torirender_report.txt
 
-/logs/*.log
-/results/*.log
+# ------------------------------
+# Runtime artifacts
+# ------------------------------
+/logs/*
+!/logs/.gitkeep
+
+/results/*
+!/results/.gitkeep
+
+*.log
 torirender_serial.o*
 torirender_serial.e*
 torirender_serial.*.log
