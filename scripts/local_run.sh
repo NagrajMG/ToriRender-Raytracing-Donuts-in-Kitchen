@@ -6,6 +6,8 @@ set -euo pipefail
 # Resolve repository root from script location.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_START_EPOCH="$(date +%s)"
+SCRIPT_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 # Positional args:
 #   $1 : config path
@@ -23,7 +25,24 @@ if (($# >= 2)); then
   OUTPUT_DIR="$2"
 fi
 
-# Standard directories used by local serial workflow.
+build_divider() {
+  local width="$1"
+  printf '%*s' "${width}" '' | tr ' ' '='
+}
+
+center_line() {
+  local width="$1"
+  local text="$2"
+  local len="${#text}"
+  if ((len >= width)); then
+    printf '%s\n' "${text}"
+    return
+  fi
+  local left_padding=$(((width - len) / 2))
+  local right_padding=$((width - len - left_padding))
+  printf '%*s%s%*s\n' "${left_padding}" '' "${text}" "${right_padding}" ''
+}
+
 BUILD_DIR="${REPO_ROOT}/build"
 LOG_DIR="${REPO_ROOT}/logs"
 RESULTS_DIR="${REPO_ROOT}/results"
@@ -47,6 +66,9 @@ if [[ "${OUTPUT_PATH}" != /* ]]; then
   OUTPUT_PATH="${REPO_ROOT}/${OUTPUT_DIR}"
 fi
 METRICS_CSV="${OUTPUT_PATH}/render_metrics.csv"
+RUN_REPORTS_DIR="${OUTPUT_PATH}/run_reports"
+RUN_REPORT="${RUN_REPORTS_DIR}/${RUN_ID}.txt"
+mkdir -p "${RUN_REPORTS_DIR}"
 
 # Snapshot CSV line count before running, to verify append behavior.
 before_lines=0
@@ -63,12 +85,14 @@ cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" \
 cmake --build "${BUILD_DIR}" --target render_scene -j1
 
 # Run renderer and capture stdout/stderr in separate files.
+RENDER_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 start_epoch="$(date +%s)"
 set +e
 "${BUILD_DIR}/render_scene" "${CONFIG_PATH}" "${OUTPUT_DIR}" >"${STDOUT_LOG}" 2>"${STDERR_LOG}"
 status=$?
 set -e
 end_epoch="$(date +%s)"
+RENDER_END_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 elapsed_seconds="$((end_epoch - start_epoch))"
 
 # Snapshot CSV line count after running.
@@ -82,6 +106,60 @@ csv_appended="no"
 if [[ ${after_lines} -gt ${before_lines} ]]; then
   csv_appended="yes"
 fi
+
+SCRIPT_END_EPOCH="$(date +%s)"
+SCRIPT_END_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+SCRIPT_ELAPSED_SECONDS="$((SCRIPT_END_EPOCH - SCRIPT_START_EPOCH))"
+
+latest_metrics_row="N/A"
+if [[ -f "${METRICS_CSV}" ]]; then
+  latest_metrics_row="$(tail -n 1 "${METRICS_CSV}" 2>/dev/null || echo "N/A")"
+fi
+
+run_status_text="SUCCESS"
+if [[ ${status} -ne 0 ]]; then
+  run_status_text="FAILED (exit ${status})"
+fi
+
+csv_status_text="NO"
+if [[ "${csv_appended}" == "yes" ]]; then
+  csv_status_text="YES"
+fi
+
+REPORT_WIDTH=160
+REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
+
+{
+  echo "${REPORT_DIVIDER}"
+  center_line "${REPORT_WIDTH}" "ToriRender Run Report"
+  echo "${REPORT_DIVIDER}"
+  echo
+  echo "[Run Information]"
+  printf "  %-26s %s\n" "Run ID:" "${RUN_ID}"
+  printf "  %-26s %s\n" "Type:" "local"
+  printf "  %-26s %s\n" "Status:" "${run_status_text}"
+  echo
+  echo "[Timing]"
+  printf "  %-26s %s\n" "Script Start (Machine):" "${SCRIPT_START_TIME}"
+  printf "  %-26s %s\n" "Script End (Machine):" "${SCRIPT_END_TIME}"
+  printf "  %-26s %ss\n" "Script Duration:" "${SCRIPT_ELAPSED_SECONDS}"
+  printf "  %-26s %s\n" "Render Start (Machine):" "${RENDER_START_TIME}"
+  printf "  %-26s %s\n" "Render End (Machine):" "${RENDER_END_TIME}"
+  printf "  %-26s %ss\n" "Render Duration:" "${elapsed_seconds}"
+  echo
+  echo "[Inputs and Outputs]"
+  printf "  %-26s %s\n" "Config Path:" "${CONFIG_PATH}"
+  printf "  %-26s %s\n" "Output Directory:" "${OUTPUT_DIR}"
+  printf "  %-26s %s\n" "Metrics CSV:" "${METRICS_CSV}"
+  printf "  %-26s %s\n" "CSV Row Appended:" "${csv_status_text}"
+  printf "  %-26s %s\n" "Latest Metrics Row:" "${latest_metrics_row}"
+  echo
+  echo "[Logs]"
+  printf "  %-26s %s\n" "Render STDOUT:" "${STDOUT_LOG}"
+  printf "  %-26s %s\n" "Render STDERR:" "${STDERR_LOG}"
+  echo
+  echo "${REPORT_DIVIDER}"
+} >"${RUN_REPORT}"
 
 # Append run summary
 {
@@ -103,17 +181,20 @@ if [[ ${status} -ne 0 ]]; then
   echo "Render failed. Check:"
   echo "  ${STDOUT_LOG}"
   echo "  ${STDERR_LOG}"
+  echo "  ${RUN_REPORT}"
   exit "${status}"
 fi
 
 # Treat missing CSV append as workflow error.
 if [[ "${csv_appended}" != "yes" ]]; then
   echo "Render completed but metrics CSV was not appended: ${METRICS_CSV}"
+  echo "Run report: ${RUN_REPORT}"
   exit 2
 fi
 
-# Success summary.
+# Success summary
 echo "Render completed."
 echo "  stdout: ${STDOUT_LOG}"
 echo "  stderr: ${STDERR_LOG}"
 echo "  metrics: ${METRICS_CSV}"
+echo "  report: ${RUN_REPORT}"

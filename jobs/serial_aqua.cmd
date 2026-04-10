@@ -1,5 +1,21 @@
 #!/bin/bash
 
+# This script runs one simple serial render job on AQuA cluster.
+# Only one CPU is used, no parallel run here.
+# Flow in short:
+# 1) code is copied from repo folder to scratch folder
+# 2) build and render run happens in scratch
+# 3) stdout/stderr/pbs logs are saved
+# 4) image, csv, and run report are copied back to repo folder
+# 5) if run is success scratch is cleaned, if fail scratch is kept for debugging
+
+# Functionality:
+# - for submission: qsub jobs/serial_aqua.cmd
+# - Get final image in: output/images/
+# - Get timing row in: output/render_metrics.csv
+# - Get full run report in: output/run_reports/
+# - Get logs in: logs/
+
 #PBS -N torirender_serial
 #PBS -l select=1:ncpus=1
 #PBS -l walltime=05:00:00
@@ -8,8 +24,9 @@
 
 set -euo pipefail
 
-# Some site profile scripts reference this without guarding under nounset.
 export COLORTERM="${COLORTERM-}"
+SCRIPT_START_EPOCH="$(date +%s)"
+SCRIPT_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 if [[ -z "${PBS_O_WORKDIR:-}" ]]; then
   echo "PBS_O_WORKDIR is not set. Submit this script with qsub."
@@ -39,10 +56,30 @@ PBS_LOG="${LOG_DIR_WORK}/${RUN_ID}.pbs.log"
 RENDER_STDOUT_LOG_REL="logs/${RUN_ID}.stdout.log"
 RENDER_STDERR_LOG_REL="logs/${RUN_ID}.stderr.log"
 RUN_SUMMARY_LOG_REL="results/aqua_serial_runs.log"
+RUN_REPORT_DIR_REL="output/run_reports"
+RUN_REPORT_FILE_REL="${RUN_REPORT_DIR_REL}/${RUN_ID}.txt"
 
 CONFIG_PATH="config/scene.json"
 OUTPUT_DIR_NAME="output"
 METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics.csv"
+
+build_divider() {
+  local width="$1"
+  printf '%*s' "${width}" '' | tr ' ' '='
+}
+
+center_line() {
+  local width="$1"
+  local text="$2"
+  local len="${#text}"
+  if ((len >= width)); then
+    printf '%s\n' "${text}"
+    return
+  fi
+  local left_padding=$(((width - len) / 2))
+  local right_padding=$((width - len - left_padding))
+  printf '%*s%s%*s\n' "${left_padding}" '' "${text}" "${right_padding}" ''
+}
 
 cleanup_scheduler_wrappers() {
   rm -f \
@@ -54,7 +91,7 @@ cleanup_scheduler_wrappers() {
 }
 trap cleanup_scheduler_wrappers EXIT
 
-# Route full job-script output to deterministic per-run PBS log.
+# Route job-script output to PBS log.
 exec >"${PBS_LOG}" 2>&1
 
 echo "AQuA serial job started"
@@ -79,7 +116,7 @@ else
 fi
 
 cd "${SCRATCH_REPO}"
-mkdir -p logs results output
+mkdir -p logs results output "${RUN_REPORT_DIR_REL}"
 
 safe_source() {
   local file="$1"
@@ -91,7 +128,6 @@ safe_source() {
   fi
 }
 
-# Try to initialize modules in non-interactive PBS shell.
 safe_source /etc/profile.d/modules.sh
 safe_source /usr/share/Modules/init/bash
 
@@ -152,7 +188,6 @@ fi
 echo "cmake_bin=${CMAKE_BIN:-missing}"
 echo "cxx_bin=${CXX_BIN:-missing}"
 
-# Prevent inherited include path overrides from selecting wrong libstdc++ headers.
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH || true
 
 before_lines=0
@@ -162,6 +197,8 @@ fi
 
 status=0
 elapsed_seconds=0
+RENDER_START_TIME="N/A"
+RENDER_END_TIME="N/A"
 
 if [[ -z "${CMAKE_BIN}" ]]; then
   status=127
@@ -203,12 +240,14 @@ if [[ ${status} -eq 0 ]]; then
 fi
 
 if [[ ${status} -eq 0 ]]; then
+  RENDER_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
   start_epoch="$(date +%s)"
   set +e
   ./build/render_scene "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
   status=$?
   set -e
   end_epoch="$(date +%s)"
+  RENDER_END_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
   elapsed_seconds="$((end_epoch - start_epoch))"
 else
   : >"${RENDER_STDOUT_LOG_REL}"
@@ -226,6 +265,64 @@ csv_appended="no"
 if [[ ${after_lines} -gt ${before_lines} ]]; then
   csv_appended="yes"
 fi
+
+SCRIPT_END_EPOCH="$(date +%s)"
+SCRIPT_END_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
+SCRIPT_ELAPSED_SECONDS="$((SCRIPT_END_EPOCH - SCRIPT_START_EPOCH))"
+
+latest_metrics_row="N/A"
+if [[ -f "${METRICS_CSV_REL}" ]]; then
+  latest_metrics_row="$(tail -n 1 "${METRICS_CSV_REL}" 2>/dev/null || echo "N/A")"
+fi
+
+run_status_text="SUCCESS"
+if [[ ${status} -ne 0 ]]; then
+  run_status_text="FAILED (exit ${status})"
+fi
+
+csv_status_text="NO"
+if [[ "${csv_appended}" == "yes" ]]; then
+  csv_status_text="YES"
+fi
+
+REPORT_WIDTH=160
+REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
+
+{
+  echo "${REPORT_DIVIDER}"
+  center_line "${REPORT_WIDTH}" "ToriRender Run Report"
+  echo "${REPORT_DIVIDER}"
+  echo
+  echo "[Run Information]"
+  printf "  %-26s %s\n" "Run ID:" "${RUN_ID}"
+  printf "  %-26s %s\n" "Type:" "aqua"
+  printf "  %-26s %s\n" "Job ID:" "${JOB_ID_FULL}"
+  printf "  %-26s %s\n" "Status:" "${run_status_text}"
+  echo
+  echo "[Timing]"
+  printf "  %-26s %s\n" "Script Start (Machine):" "${SCRIPT_START_TIME}"
+  printf "  %-26s %s\n" "Script End (Machine):" "${SCRIPT_END_TIME}"
+  printf "  %-26s %ss\n" "Script Duration:" "${SCRIPT_ELAPSED_SECONDS}"
+  printf "  %-26s %s\n" "Render Start (Machine):" "${RENDER_START_TIME}"
+  printf "  %-26s %s\n" "Render End (Machine):" "${RENDER_END_TIME}"
+  printf "  %-26s %ss\n" "Render Duration:" "${elapsed_seconds}"
+  echo
+  echo "[Paths and Outputs]"
+  printf "  %-26s %s\n" "Work Directory:" "${WORKDIR}"
+  printf "  %-26s %s\n" "Scratch Job Directory:" "${SCRATCH_JOB_DIR}"
+  printf "  %-26s %s\n" "Config Path:" "${CONFIG_PATH}"
+  printf "  %-26s %s\n" "Output Directory:" "${OUTPUT_DIR_NAME}"
+  printf "  %-26s %s\n" "Metrics CSV:" "${METRICS_CSV_REL}"
+  printf "  %-26s %s\n" "CSV Row Appended:" "${csv_status_text}"
+  printf "  %-26s %s\n" "Latest Metrics Row:" "${latest_metrics_row}"
+  echo
+  echo "[Logs]"
+  printf "  %-26s %s\n" "PBS Log:" "${PBS_LOG}"
+  printf "  %-26s %s\n" "Render STDOUT:" "${RENDER_STDOUT_LOG_REL}"
+  printf "  %-26s %s\n" "Render STDERR:" "${RENDER_STDERR_LOG_REL}"
+  echo
+  echo "${REPORT_DIVIDER}"
+} >"${RUN_REPORT_FILE_REL}"
 
 {
   echo "timestamp=${RUN_TS}"
@@ -246,6 +343,7 @@ fi
   echo "csv_appended=${csv_appended}"
   echo "stdout_log=${RENDER_STDOUT_LOG_REL}"
   echo "stderr_log=${RENDER_STDERR_LOG_REL}"
+  echo "run_report=${RUN_REPORT_FILE_REL}"
   echo "---"
 } >>"${RUN_SUMMARY_LOG_REL}"
 
@@ -262,15 +360,18 @@ fi
 if [[ ${status} -ne 0 ]]; then
   echo "Render job failed with status ${status}."
   echo "Scratch retained at: ${SCRATCH_JOB_DIR}"
+  echo "Run report: ${WORKDIR}/${RUN_REPORT_FILE_REL}"
   exit "${status}"
 fi
 
 if [[ "${csv_appended}" != "yes" ]]; then
   echo "Render completed but metrics CSV was not appended."
   echo "Scratch retained at: ${SCRATCH_JOB_DIR}"
+  echo "Run report: ${WORKDIR}/${RUN_REPORT_FILE_REL}"
   exit 2
 fi
 
 rm -rf "${SCRATCH_JOB_DIR}"
 echo "AQuA serial run completed successfully."
 echo "Outputs copied back to: ${WORKDIR}"
+echo "Run report: ${WORKDIR}/${RUN_REPORT_FILE_REL}"

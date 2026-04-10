@@ -66,10 +66,11 @@ Run:
 ```
 
 Output files:
-- `<output_dir>/<image_name>.png`
+- `<output_dir>/images/serial_<WxH>_ssp<S>_depth<D>.png`
 - `<output_dir>/render_metrics.csv`
 
 CSV columns:
+- `image_file`
 - `resolution`
 - `ssp`
 - `depth`

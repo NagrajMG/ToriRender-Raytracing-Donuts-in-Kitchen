@@ -11,7 +11,7 @@
   
     "max_depth": 2, 
 
-    "samples_per_pixel": 10, 
+    "samples_per_pixel": 2, 
 
     "rng_seed": 1337 
   },
@@ -52,25 +52,25 @@
     "material": {
       "type": "metal",
 
-      "base_color": [0.95, 0.95, 0.95], 
+      "base_color": [0.80, 0.82, 0.86], 
 
-      "specular_color": [1.0, 1.0, 1.0], 
+      "specular_color": [0.93, 0.94, 0.96], 
 
-      "ambient": 0.03,
-      "diffuse": 0.1,
+      "ambient": 0.015,
+      "diffuse": 0.07,
 
-      "specular": 1.0,
-      "shininess": 260.0,
+      "specular": 0.72,
+      "shininess": 180.0,
 
-      "fuzz": 0.01
+      "fuzz": 0.035
     }
   },
 
   "scene": {
-    "light_direction": [-0.34, 1.0, -0.25], 
+    "light_direction": [-0.62, 1.0, -0.48], 
 
-    "background_low": [0.72, 0.82, 0.94], 
-    "background_high": [0.96, 0.98, 1.0], 
+    "background_low": [0.44, 0.67, 0.97], 
+    "background_high": [0.60, 0.78, 0.97], 
 
     "floor_y": -1.22, 
 
