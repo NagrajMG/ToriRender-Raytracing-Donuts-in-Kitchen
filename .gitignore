@@ -106,3 +106,9 @@ build_tests
 build
 
 torirender_report.txt
+
+/logs/*.log
+/results/*.log
+torirender_serial.o*
+torirender_serial.e*
+torirender_serial.*.log
