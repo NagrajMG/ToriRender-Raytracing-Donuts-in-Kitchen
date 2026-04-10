@@ -1,0 +1,37 @@
+AQuA serial job started
+job_id=1727888.hn1
+workdir=/lfs/usrhome/btech/ce23b048/ToriRender
+scratch_job_dir=/lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727888
+pbs_log=/lfs/usrhome/btech/ce23b048/ToriRender/logs/aqua_serial_2026-04-10_time_17h11m25s.pbs.log
+cmake_bin=/lfs/sware/cmake3.26/bin/cmake
+cxx_bin=/lfs/sware/gcc13.3.0/bin/c++
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /lfs/sware/gcc13.3.0/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Using vendored nlohmann/json.hpp from third_party.
+-- Configuring done (10.8s)
+-- Generating done (1.1s)
+-- Build files have been written to: /lfs/usrhome/btech/ce23b048/scratch/ToriRender/job1727888/repo/build
+[  6%] Building CXX object CMakeFiles/torirender_core.dir/src/math/Vec3.cpp.o
+[ 12%] Building CXX object CMakeFiles/torirender_core.dir/src/math/QuarticSolver.cpp.o
+[ 18%] Building CXX object CMakeFiles/torirender_core.dir/src/core/Ray.cpp.o
+[ 25%] Building CXX object CMakeFiles/torirender_core.dir/src/core/Camera.cpp.o
+[ 31%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/AABB.cpp.o
+[ 37%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/Torus.cpp.o
+[ 43%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/RayTorus.cpp.o
+[ 50%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/RayMarcher.cpp.o
+[ 56%] Building CXX object CMakeFiles/torirender_core.dir/src/geometry/BVH.cpp.o
+[ 62%] Building CXX object CMakeFiles/torirender_core.dir/src/io/Image.cpp.o
+[ 68%] Building CXX object CMakeFiles/torirender_core.dir/src/render/Shader.cpp.o
+[ 75%] Building CXX object CMakeFiles/torirender_core.dir/src/scene/SceneConfig.cpp.o
+[ 81%] Building CXX object CMakeFiles/torirender_core.dir/src/scene/Scene.cpp.o
+[ 87%] Linking CXX static library libtorirender_core.a
+[ 87%] Built target torirender_core
+[ 93%] Building CXX object CMakeFiles/render_scene.dir/cli/render_scene.cpp.o
+[100%] Linking CXX executable render_scene
+[100%] Built target render_scene
+AQuA serial run completed successfully.
+Outputs copied back to: /lfs/usrhome/btech/ce23b048/ToriRender
