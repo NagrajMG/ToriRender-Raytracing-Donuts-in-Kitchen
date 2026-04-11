@@ -144,8 +144,11 @@ Vec3 Scene::traceRecursive(const Ray& ray, int depth) const noexcept {
       useFloor ? materialForFloorHit(hitRecord) : materialForTorusHit(hitRecord);
 
   // local shading
-  const Vec3 viewDirection = (-ray.direction()).normalized();
-  const double visibility = directLightVisibility(hitRecord);
+  const Vec3 rayDirection = ray.direction();
+  const Vec3 viewDirection = -rayDirection;
+  // Optimization worked out here: skip shadow-ray traversal when light is behind the surface.
+  const double visibility =
+      dot(hitRecord.normal, lightDirection_) > 0.0 ? directLightVisibility(hitRecord) : 0.0;
 
   const Vec3 localShading = shader_.shade(material.baseColor,
                                           hitRecord.normal,
@@ -162,7 +165,9 @@ Vec3 Scene::traceRecursive(const Ray& ray, int depth) const noexcept {
 
   // metal reflection
   if (material.type == MaterialType::Metal) {
-    Vec3 reflectedDirection = reflect(ray.direction().normalized(), hitRecord.normal).normalized();
+    // Optimization worked out here: reuse normalized ray direction and avoid extra normalize()
+    // input.
+    Vec3 reflectedDirection = reflect(rayDirection, hitRecord.normal).normalized();
 
     // add fuzz
     reflectedDirection =
@@ -187,8 +192,7 @@ Vec3 Scene::traceRecursive(const Ray& ray, int depth) const noexcept {
     return localShading;
   }
 
-  const Vec3 reflectedDirection =
-      reflect(ray.direction().normalized(), hitRecord.normal).normalized();
+  const Vec3 reflectedDirection = reflect(rayDirection, hitRecord.normal).normalized();
 
   const Ray reflectedRay(hitRecord.point + (1e-4 * hitRecord.normal), reflectedDirection);
   const Vec3 reflectedColor = traceRecursive(reflectedRay, depth - 1);
@@ -198,13 +202,15 @@ Vec3 Scene::traceRecursive(const Ray& ray, int depth) const noexcept {
 
 // sky gradient
 Vec3 Scene::background(const Ray& ray) const noexcept {
-  const double blend = 0.5 * (ray.direction().normalized().y + 1.0);
+  // Optimization worked out here: camera/reflection rays are already normalized.
+  const double blend = 0.5 * (ray.direction().y + 1.0);
   return ((1.0 - blend) * backgroundLow_) + (blend * backgroundHigh_);
 }
 
 // shadow ray
 double Scene::directLightVisibility(const HitRecord& hitRecord) const noexcept {
-  const Vec3 shadowDirection = lightDirection_.normalized();
+  // Optimization worked out here: lightDirection_ is pre-normalized in Scene constructor.
+  const Vec3 shadowDirection = lightDirection_;
   if (shadowDirection.nearZero()) {
     return 1.0;
   }

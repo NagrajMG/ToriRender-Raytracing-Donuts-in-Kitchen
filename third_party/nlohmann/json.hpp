@@ -4986,8 +4986,9 @@ struct less<::nlohmann::detail::value_t>  // do not remove the space after '<', 
 /// @sa https://json.nlohmann.me/api/basic_json/std_swap/
 NLOHMANN_BASIC_JSON_TPL_DECLARATION
 inline void swap(nlohmann::NLOHMANN_BASIC_JSON_TPL& j1,
-                 nlohmann::NLOHMANN_BASIC_JSON_TPL& j2) noexcept(  // NOLINT(readability-inconsistent-declaration-parameter-name,
-                                                                   // cert-dcl58-cpp)
+                 nlohmann::NLOHMANN_BASIC_JSON_TPL&
+                     j2) noexcept(  // NOLINT(readability-inconsistent-declaration-parameter-name,
+                                    // cert-dcl58-cpp)
     is_nothrow_move_constructible<nlohmann::NLOHMANN_BASIC_JSON_TPL>::
         value &&  // NOLINT(misc-redundant-expression,cppcoreguidelines-noexcept-swap,performance-noexcept-swap)
     is_nothrow_move_assignable<nlohmann::NLOHMANN_BASIC_JSON_TPL>::value) {

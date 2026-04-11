@@ -14,6 +14,7 @@ struct PhongParams {
 
 class Shader {
  public:
+  // Optimization worked out here: normal/lightDirection/viewDirection are expected normalized.
   Vec3 shade(const Vec3& baseColor,
              const Vec3& normal,
              const Vec3& lightDirection,

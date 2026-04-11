@@ -335,6 +335,10 @@ std::vector<double> solvePolynomialReal(const std::array<double, 5>& input, doub
   if (realRoots.count == 0) {
     constexpr double kAmbiguousImagThreshold = 1e-3;
     const bool forceRecoverySearch = minImagAbs <= kAmbiguousImagThreshold;
+    // Optimization worked out here: skip costly sampling search on clear "no real root" cases.
+    if (!forceRecoverySearch) {
+      return {};
+    }
     constexpr int kSampleLevels[] = {128, 512, 2048};
 
     for (int sampleLevel : kSampleLevels) {

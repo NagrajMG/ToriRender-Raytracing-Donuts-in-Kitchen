@@ -30,10 +30,10 @@ Vec3 Shader::shade(const Vec3& baseColor,
                    const PhongParams& params,
                    double directLightVisibility,
                    bool isMetal) const noexcept {
-  // normalize vectors
-  const Vec3 n = normal.normalized();
-  const Vec3 l = lightDirection.normalized();
-  const Vec3 v = viewDirection.normalized();
+  // Optimization worked out here: inputs are already normalized from Scene.
+  const Vec3& n = normal;
+  const Vec3& l = lightDirection;
+  const Vec3& v = viewDirection;
 
   const double visibility = math::clamp(directLightVisibility, 0.0, 1.0);
 

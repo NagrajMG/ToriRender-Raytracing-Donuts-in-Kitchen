@@ -50,12 +50,21 @@ QuarticCoefficients buildQuartic(const Ray& ray, const Torus& torus) noexcept {
   return coeffs;
 }
 
-double refineRootNewton(const Ray& ray, const Torus& torus, double initialRoot) noexcept {
+double evaluateQuartic(const QuarticCoefficients& coeffs, double t) noexcept {
+  return (((coeffs.a4 * t + coeffs.a3) * t + coeffs.a2) * t + coeffs.a1) * t + coeffs.a0;
+}
+
+double evaluateQuarticDerivative(const QuarticCoefficients& coeffs, double t) noexcept {
+  return ((4.0 * coeffs.a4 * t + 3.0 * coeffs.a3) * t + 2.0 * coeffs.a2) * t + coeffs.a1;
+}
+
+double refineRootNewton(const QuarticCoefficients& coeffs, double initialRoot) noexcept {
   double t = initialRoot;
   for (int iter = 0; iter < 8; ++iter) {
-    const Vec3 point = ray.at(t);
-    const double f = torus.evaluate(point);
-    const double fp = dot(torus.gradient(point), ray.direction());
+    // Optimization worked out here: Newton refinement on quartic polynomial avoids torus gradient
+    // eval.
+    const double f = evaluateQuartic(coeffs, t);
+    const double fp = evaluateQuarticDerivative(coeffs, t);
 
     if (std::fabs(fp) <= 1e-12) {
       break;
@@ -93,13 +102,14 @@ bool intersectRayTorus(const Ray& ray,
       continue;
     }
 
-    const double refined = refineRootNewton(ray, torus, root);
+    const double refined = refineRootNewton(coeffs, root);
     if (!std::isfinite(refined) || refined <= tMin || refined >= bestT || refined >= tMax) {
       continue;
     }
 
-    const double residual = std::fabs(torus.evaluate(ray.at(refined)));
-    if (residual > 1e-5) {
+    // Optimization worked out here: cheap quartic residual test inside root scan.
+    const double residual = std::fabs(evaluateQuartic(coeffs, refined));
+    if (residual > 1e-7) {
       continue;
     }
 
@@ -114,8 +124,18 @@ bool intersectRayTorus(const Ray& ray,
     return marchRayToTorus(ray, torus, hitRecord, tMin, tMax);
   }
 
+  // Optimization worked out here: expensive torus residual validation is done once for final best
+  // root.
+  const Vec3 bestPoint = ray.at(bestT);
+  if (std::fabs(torus.evaluate(bestPoint)) > 1e-5) {
+    if (!useSdfFallback) {
+      return false;
+    }
+    return marchRayToTorus(ray, torus, hitRecord, tMin, tMax);
+  }
+
   hitRecord.t = bestT;
-  hitRecord.point = ray.at(bestT);
+  hitRecord.point = bestPoint;
   const Vec3 outwardNormal = torus.normal(hitRecord.point, 1e-8);
   hitRecord.setFaceNormal(ray, outwardNormal);
   return true;

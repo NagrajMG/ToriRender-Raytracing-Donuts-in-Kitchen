@@ -1,0 +1,29 @@
+================================================================================================================================================================
+                                                                     ToriRender Run Report                                                                      
+================================================================================================================================================================
+
+[Run Information]
+  Run ID:                    local_serial_2026-04-11_time_13h24m17s
+  Type:                      local
+  Status:                    SUCCESS
+
+[Timing]
+  Script Start (Machine):    2026-04-11 13:24:17 IST
+  Script End (Machine):      2026-04-11 13:24:25 IST
+  Script Duration:           8s
+  Render Start (Machine):    2026-04-11 13:24:22 IST
+  Render End (Machine):      2026-04-11 13:24:25 IST
+  Render Duration:           3s
+
+[Inputs and Outputs]
+  Config Path:               config/scene.json
+  Output Directory:          output
+  Metrics CSV:               output/render_metrics.csv
+  CSV Row Appended:          YES
+  Latest Metrics Row:        serial_640x360_ssp2_depth2.png,640x360,2,2,2.152281
+
+[Logs]
+  Render STDOUT:             logs/local_serial_2026-04-11_time_13h24m17s.stdout.log
+  Render STDERR:             logs/local_serial_2026-04-11_time_13h24m17s.stderr.log
+
+================================================================================================================================================================
