@@ -1,0 +1,33 @@
+================================================================================================================================================================
+                                                                     ToriRender Run Report                                                                      
+================================================================================================================================================================
+
+[Run Information]
+  Run ID:                    aqua_serial_2026-04-10_time_18h57m56s
+  Type:                      aqua
+  Job ID:                    1727950.hn1
+  Status:                    SUCCESS
+
+[Timing]
+  Script Start (Machine):    2026-04-10 18:57:56 IST
+  Script End (Machine):      2026-04-11 02:37:22 IST
+  Script Duration:           27566s
+  Render Start (Machine):    2026-04-10 18:58:19 IST
+  Render End (Machine):      2026-04-11 02:37:22 IST
+  Render Duration:           27543s
+
+[Paths and Outputs]
+  Workspace:                 ToriRender
+  Scratch:                   [private]
+  Config Path:               config/scene.json
+  Output Directory:          output
+  Metrics CSV:               output/render_metrics.csv
+  CSV Row Appended:          YES
+  Latest Metrics Row:        serial_1920x1080_ssp512_depth10.png,1920x1080,512,10,27542.208595
+
+[Logs]
+  PBS Log:                   logs/aqua_serial_2026-04-10_time_18h57m56s.pbs.log
+  Render STDOUT:             logs/aqua_serial_2026-04-10_time_18h57m56s.stdout.log
+  Render STDERR:             logs/aqua_serial_2026-04-10_time_18h57m56s.stderr.log
+
+================================================================================================================================================================
