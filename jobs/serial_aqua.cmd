@@ -18,7 +18,7 @@
 
 #PBS -N torirender_serial
 #PBS -l select=1:ncpus=1
-#PBS -l walltime=24:00:00
+#PBS -l walltime=48:00:00
 #PBS -j oe
 #PBS -o /dev/null
 
