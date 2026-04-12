@@ -113,11 +113,8 @@ class ResourceTracker {
                     const std::string& rankEndTime = std::string());
   void log_gpu_info(int gpuId, int totalGpus);
   void log_cpu_threads(int ompThreads);
-  void log_work_distribution(int rowStart,
-                             int rowCount,
-                             int imageWidth,
-                             int imageHeight,
-                             std::uint64_t raysProcessed);
+  void log_work_distribution(
+      int rowStart, int rowCount, int imageWidth, int imageHeight, std::uint64_t raysProcessed);
   void log_gpu_execution(std::uint64_t kernelLaunches,
                          bool kernelsAsync,
                          double gpuActiveTime,
@@ -160,4 +157,3 @@ class ResourceTracker {
 };
 
 }  // namespace torirender::runtime
-

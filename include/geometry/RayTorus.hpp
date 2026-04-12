@@ -17,4 +17,4 @@ bool intersectRayTorus(const Ray& ray,
                        double tMax = std::numeric_limits<double>::infinity(),
                        bool useSdfFallback = false) noexcept;
 
-}
+}  // namespace torirender
