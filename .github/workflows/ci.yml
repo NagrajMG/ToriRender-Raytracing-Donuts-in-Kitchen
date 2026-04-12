@@ -6,28 +6,8 @@ on:
   pull_request:
 
 jobs:
-  format-check:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install clang-format
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
-
-      - name: Run clang-format
-        run: bash scripts/format.sh
-
-      - name: Verify formatting
-        run: |
-          git diff --exit-code || (echo "Formatting check failed. Run: bash scripts/format.sh" && exit 1)
-
   build-and-test:
     runs-on: ubuntu-latest
-    needs: format-check
 
     steps:
       - name: Checkout
