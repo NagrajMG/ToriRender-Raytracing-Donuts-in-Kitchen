@@ -325,8 +325,22 @@ if [[ ${status} -eq 0 ]]; then
       echo "mpirun not found in PATH" >"${RENDER_STDERR_LOG_REL}"
       : >"${RENDER_STDOUT_LOG_REL}"
     else
-      "${MPIRUN_BIN}" -np "${MPI_RANKS}" \
-        --bind-to none --map-by slot \
+      # Build hostfile from PBS allocation to make MPI slot mapping deterministic.
+      MPI_HOSTFILE_REL="results/${RUN_ID}.hostfile"
+      if [[ -n "${PBS_NODEFILE:-}" && -f "${PBS_NODEFILE}" ]]; then
+        awk '{count[$1]++} END {for (h in count) printf "%s slots=%d\n", h, count[h]}' \
+          "${PBS_NODEFILE}" > "${MPI_HOSTFILE_REL}"
+      else
+        printf "%s slots=%s\n" "$(hostname)" "${ALLOC_NCPUS}" > "${MPI_HOSTFILE_REL}"
+      fi
+
+      if [[ ! -s "${MPI_HOSTFILE_REL}" ]]; then
+        printf "%s slots=%s\n" "$(hostname)" "${ALLOC_NCPUS}" > "${MPI_HOSTFILE_REL}"
+      fi
+
+      "${MPIRUN_BIN}" --hostfile "${MPI_HOSTFILE_REL}" \
+        -np "${MPI_RANKS}" \
+        --bind-to core --map-by slot:PE="${OMP_THREADS}" \
         ./build/torirender_cpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
         --mode parallel \
         --mpi-ranks "${MPI_RANKS}" \
