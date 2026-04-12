@@ -128,3 +128,6 @@ torirender_cpu.*.log
 torirender_gpu.o*
 torirender_gpu.e*
 torirender_gpu.*.log
+
+
+status
