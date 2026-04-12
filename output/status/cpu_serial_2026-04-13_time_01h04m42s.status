@@ -1,0 +1,12 @@
+run_id=cpu_serial_2026-04-13_time_01h04m42s
+backend=cpu
+mode=serial
+mpi_ranks=1
+omp_threads=1
+gpus=0
+done_pixels=230400
+total_pixels=230400
+progress_percent=100.00
+elapsed_seconds=15.679
+eta_seconds=0.000
+heartbeat_seconds=60

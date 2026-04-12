@@ -1,0 +1,3 @@
+run_id,rank,hostname,gpu_id,total_ranks,ncpus,ngpus,omp_threads,scene_time,kernel_time,transfer_time,mpi_time,output_time,total_time,rays_processed
+cpu_serial_2026-04-13_time_01h01m58s,0,cn190,-1,1,1,0,1,0.000026,44.015799,0.000000,0.000027,0.130226,44.151187,2304000
+cpu_serial_2026-04-13_time_01h04m42s,0,cn190,-1,1,1,0,1,0.000027,15.679309,0.000000,0.000019,0.104642,15.788989,921600
