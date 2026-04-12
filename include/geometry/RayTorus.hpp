@@ -2,12 +2,14 @@
 
 #include <limits>
 
+#include "core/Accel.hpp"
 #include "core/Hit.hpp"
 #include "core/Ray.hpp"
 #include "geometry/Torus.hpp"
 
 namespace torirender {
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool intersectRayTorus(const Ray& ray,
                        const Torus& torus,
                        HitRecord& hitRecord,

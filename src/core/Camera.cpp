@@ -103,14 +103,17 @@ Camera::Camera(const Vec3& lookFrom,
       viewportUpperLeft + 0.5 * (pixelDeltaU_ + pixelDeltaV_);  // center of the top-left pixel cell
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 int Camera::imageWidth() const noexcept {
   return imageWidth_;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 int Camera::imageHeight() const noexcept {
   return imageHeight_;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Ray Camera::getRay(double pixelX, double pixelY) const noexcept {
   const double i = std::clamp(pixelX, 0.0, static_cast<double>(imageWidth_ - 1));
   const double j = std::clamp(pixelY, 0.0, static_cast<double>(imageHeight_ - 1));
@@ -125,6 +128,7 @@ Ray Camera::getRay(double pixelX, double pixelY) const noexcept {
   return Ray(origin_, direction.normalized());
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Ray Camera::getRay(int pixelX, int pixelY) const noexcept {
   return getRay(static_cast<double>(pixelX), static_cast<double>(pixelY));
 }

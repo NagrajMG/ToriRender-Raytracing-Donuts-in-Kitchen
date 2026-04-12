@@ -233,6 +233,22 @@ bool loadSceneConfigFromJsonFile(const std::string& path,
       }
     }
 
+    if (root.contains("runtime") && root["runtime"].is_object()) {
+      const Json& runtime = root["runtime"];
+      if (runtime.contains("mode")) {
+        outConfig.runtime.mode = runtime["mode"].get<std::string>();
+      }
+      if (runtime.contains("mpi_ranks")) {
+        outConfig.runtime.mpiRanks = runtime["mpi_ranks"].get<int>();
+      }
+      if (runtime.contains("omp_threads")) {
+        outConfig.runtime.ompThreads = runtime["omp_threads"].get<int>();
+      }
+      if (runtime.contains("heartbeat_seconds")) {
+        outConfig.runtime.heartbeatSeconds = runtime["heartbeat_seconds"].get<int>();
+      }
+    }
+
     if (root.contains("torus_primary")) {
       updateTorus(root["torus_primary"], outConfig.torusPrimary);
     }

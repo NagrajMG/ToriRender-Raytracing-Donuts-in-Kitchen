@@ -50,6 +50,7 @@ double evaluatePolynomialDerivative(const std::array<double, 5>& coeffs,
   return result;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double sanitizeTolerance(double tolerance) noexcept {
   return tolerance > 0.0 ? tolerance : 1e-12;
 }
@@ -282,26 +283,26 @@ std::vector<double> toVector(const RealRootBuffer& roots) {
   return out;
 }
 
-std::vector<double> solvePolynomialReal(const std::array<double, 5>& input, double tolerance) {
+RealRootBuffer solvePolynomialRealBuffer(const std::array<double, 5>& input, double tolerance) {
   const double tol = sanitizeTolerance(tolerance);
 
   std::array<double, 5> coeffs{};
   int degree = -1;
   if (!compactCoefficients(input, tol, coeffs, degree) || degree <= 0) {
-    return {};
+    return RealRootBuffer{};
   }
 
   if (degree == 1) {
-    return toVector(solveLinear(coeffs[0], coeffs[1], tol));
+    return solveLinear(coeffs[0], coeffs[1], tol);
   }
 
   if (degree == 2) {
-    return toVector(solveQuadratic(coeffs[0], coeffs[1], coeffs[2], tol));
+    return solveQuadratic(coeffs[0], coeffs[1], coeffs[2], tol);
   }
 
   const double leading = coeffs[0];
   if (std::fabs(leading) <= tol) {
-    return {};
+    return RealRootBuffer{};
   }
 
   std::array<double, 5> monic = coeffs;
@@ -337,7 +338,7 @@ std::vector<double> solvePolynomialReal(const std::array<double, 5>& input, doub
     const bool forceRecoverySearch = minImagAbs <= kAmbiguousImagThreshold;
     // Optimization worked out here: skip costly sampling search on clear "no real root" cases.
     if (!forceRecoverySearch) {
-      return {};
+      return RealRootBuffer{};
     }
     constexpr int kSampleLevels[] = {128, 512, 2048};
 
@@ -364,10 +365,189 @@ std::vector<double> solvePolynomialReal(const std::array<double, 5>& input, doub
   }
 
   sortAndUniqueRoots(realRoots, tol);
-  return toVector(realRoots);
+  return realRoots;
+}
+
+TORIRENDER_ACC_ROUTINE_SEQ
+double evaluateQuarticDevice(
+    double a4, double a3, double a2, double a1, double a0, double t) noexcept {
+  return (((a4 * t + a3) * t + a2) * t + a1) * t + a0;
+}
+
+TORIRENDER_ACC_ROUTINE_SEQ
+double evaluateQuarticDerivativeDevice(
+    double a4, double a3, double a2, double a1, double t) noexcept {
+  return ((4.0 * a4 * t + 3.0 * a3) * t + 2.0 * a2) * t + a1;
+}
+
+TORIRENDER_ACC_ROUTINE_SEQ
+double bisectQuarticDevice(
+    double a4, double a3, double a2, double a1, double a0, double left, double right) noexcept {
+  double fLeft = evaluateQuarticDevice(a4, a3, a2, a1, a0, left);
+  for (int iter = 0; iter < 80; ++iter) {
+    const double mid = 0.5 * (left + right);
+    const double fMid = evaluateQuarticDevice(a4, a3, a2, a1, a0, mid);
+    if (fMid == 0.0) {
+      return mid;
+    }
+
+    if ((fLeft > 0.0 && fMid < 0.0) || (fLeft < 0.0 && fMid > 0.0)) {
+      right = mid;
+    } else {
+      left = mid;
+      fLeft = fMid;
+    }
+  }
+
+  return 0.5 * (left + right);
+}
+
+TORIRENDER_ACC_ROUTINE_SEQ
+double refineQuarticNewtonDevice(double a4,
+                                 double a3,
+                                 double a2,
+                                 double a1,
+                                 double a0,
+                                 double initial,
+                                 double tolerance) noexcept {
+  double x = initial;
+  for (int iter = 0; iter < 16; ++iter) {
+    const double value = evaluateQuarticDevice(a4, a3, a2, a1, a0, x);
+    const double slope = evaluateQuarticDerivativeDevice(a4, a3, a2, a1, x);
+    if (std::fabs(slope) <= tolerance) {
+      break;
+    }
+
+    const double next = x - (value / slope);
+    if (!std::isfinite(next)) {
+      break;
+    }
+    if (std::fabs(next - x) <= tolerance) {
+      x = next;
+      break;
+    }
+    x = next;
+  }
+  return x;
+}
+
+TORIRENDER_ACC_ROUTINE_SEQ
+void insertUniqueSortedQuarticRoot(QuarticRealRoots& roots,
+                                   double root,
+                                   double tolerance) noexcept {
+  for (int i = 0; i < roots.count; ++i) {
+    if (std::fabs(roots.values[static_cast<std::size_t>(i)] - root) <= (8.0 * tolerance)) {
+      return;
+    }
+  }
+
+  int position = roots.count;
+  for (int i = 0; i < roots.count; ++i) {
+    if (root < roots.values[static_cast<std::size_t>(i)]) {
+      position = i;
+      break;
+    }
+  }
+
+  if (roots.count < static_cast<int>(roots.values.size())) {
+    for (int i = roots.count; i > position; --i) {
+      roots.values[static_cast<std::size_t>(i)] = roots.values[static_cast<std::size_t>(i - 1)];
+    }
+    roots.values[static_cast<std::size_t>(position)] = root;
+    ++roots.count;
+    return;
+  }
+
+  if (position >= static_cast<int>(roots.values.size())) {
+    return;
+  }
+
+  for (int i = static_cast<int>(roots.values.size()) - 1; i > position; --i) {
+    roots.values[static_cast<std::size_t>(i)] = roots.values[static_cast<std::size_t>(i - 1)];
+  }
+  roots.values[static_cast<std::size_t>(position)] = root;
+}
+
+TORIRENDER_ACC_ROUTINE_SEQ
+QuarticRealRoots solveQuarticRealFixedOpenAcc(
+    double a4, double a3, double a2, double a1, double a0, double tolerance) noexcept {
+  QuarticRealRoots roots{};
+  const double tol = sanitizeTolerance(tolerance);
+  if (std::fabs(a4) <= tol) {
+    return roots;
+  }
+
+  const double invA4 = 1.0 / a4;
+  const double b3 = a3 * invA4;
+  const double b2 = a2 * invA4;
+  const double b1 = a1 * invA4;
+  const double b0 = a0 * invA4;
+
+  double maxCoeff = std::fabs(b3);
+  maxCoeff = std::max(maxCoeff, std::fabs(b2));
+  maxCoeff = std::max(maxCoeff, std::fabs(b1));
+  maxCoeff = std::max(maxCoeff, std::fabs(b0));
+  double bound = 1.0 + maxCoeff;
+  if (!std::isfinite(bound) || bound <= 0.0) {
+    bound = 1.0;
+  }
+
+  constexpr int kSampleCount = 256;
+  const double step = (2.0 * bound) / static_cast<double>(kSampleCount);
+  const double sampleTolerance = std::max(64.0 * tol, 1e-7);
+
+  double previousX = -bound;
+  double previousF = evaluateQuarticDevice(a4, a3, a2, a1, a0, previousX);
+
+  for (int i = 1; i <= kSampleCount; ++i) {
+    const double x = -bound + (static_cast<double>(i) * step);
+    const double f = evaluateQuarticDevice(a4, a3, a2, a1, a0, x);
+
+    if (std::fabs(f) <= sampleTolerance) {
+      const double refined = refineQuarticNewtonDevice(a4, a3, a2, a1, a0, x, tol);
+      if (std::isfinite(refined) &&
+          std::fabs(evaluateQuarticDevice(a4, a3, a2, a1, a0, refined)) <= 1e-6) {
+        insertUniqueSortedQuarticRoot(roots, refined, tol);
+      }
+    }
+
+    if ((previousF > 0.0 && f < 0.0) || (previousF < 0.0 && f > 0.0)) {
+      const double bracket = bisectQuarticDevice(a4, a3, a2, a1, a0, previousX, x);
+      const double refined = refineQuarticNewtonDevice(a4, a3, a2, a1, a0, bracket, tol);
+      if (std::isfinite(refined) &&
+          std::fabs(evaluateQuarticDevice(a4, a3, a2, a1, a0, refined)) <= 1e-6) {
+        insertUniqueSortedQuarticRoot(roots, refined, tol);
+      }
+    }
+
+    previousX = x;
+    previousF = f;
+  }
+
+  return roots;
+}
+
+std::vector<double> solvePolynomialReal(const std::array<double, 5>& input, double tolerance) {
+  return toVector(solvePolynomialRealBuffer(input, tolerance));
 }
 
 }  // namespace
+
+TORIRENDER_ACC_ROUTINE_SEQ
+QuarticRealRoots solveQuarticRealFixed(
+    double a4, double a3, double a2, double a1, double a0, double tolerance) {
+#if defined(TORIRENDER_USE_OPENACC)
+  return solveQuarticRealFixedOpenAcc(a4, a3, a2, a1, a0, tolerance);
+#else
+  const RealRootBuffer roots = solvePolynomialRealBuffer({a4, a3, a2, a1, a0}, tolerance);
+  QuarticRealRoots out{};
+  out.count = static_cast<int>(std::min<std::size_t>(roots.count, out.values.size()));
+  for (int i = 0; i < out.count; ++i) {
+    out.values[static_cast<std::size_t>(i)] = roots.values[static_cast<std::size_t>(i)];
+  }
+  return out;
+#endif
+}
 
 std::vector<double> solveQuarticReal(
     double a4, double a3, double a2, double a1, double a0, double tolerance) {

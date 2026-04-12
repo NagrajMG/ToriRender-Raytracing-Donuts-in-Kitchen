@@ -3,8 +3,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
-#include <vector>
 
 #include "geometry/RayMarcher.hpp"
 #include "math/QuarticSolver.hpp"
@@ -21,6 +21,7 @@ struct QuarticCoefficients {
   double a0;
 };
 
+TORIRENDER_ACC_ROUTINE_SEQ
 QuarticCoefficients buildQuartic(const Ray& ray, const Torus& torus) noexcept {
   const Vec3 axis = torus.axisDirection();
   const Vec3 o = ray.origin() - torus.center();
@@ -50,14 +51,17 @@ QuarticCoefficients buildQuartic(const Ray& ray, const Torus& torus) noexcept {
   return coeffs;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double evaluateQuartic(const QuarticCoefficients& coeffs, double t) noexcept {
   return (((coeffs.a4 * t + coeffs.a3) * t + coeffs.a2) * t + coeffs.a1) * t + coeffs.a0;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double evaluateQuarticDerivative(const QuarticCoefficients& coeffs, double t) noexcept {
   return ((4.0 * coeffs.a4 * t + 3.0 * coeffs.a3) * t + 2.0 * coeffs.a2) * t + coeffs.a1;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double refineRootNewton(const QuarticCoefficients& coeffs, double initialRoot) noexcept {
   double t = initialRoot;
   for (int iter = 0; iter < 8; ++iter) {
@@ -85,6 +89,7 @@ double refineRootNewton(const QuarticCoefficients& coeffs, double initialRoot) n
 
 }  // namespace
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool intersectRayTorus(const Ray& ray,
                        const Torus& torus,
                        HitRecord& hitRecord,
@@ -92,12 +97,13 @@ bool intersectRayTorus(const Ray& ray,
                        double tMax,
                        bool useSdfFallback) noexcept {
   const QuarticCoefficients coeffs = buildQuartic(ray, torus);
-  std::vector<double> roots =
-      math::solveQuarticReal(coeffs.a4, coeffs.a3, coeffs.a2, coeffs.a1, coeffs.a0);
+  const math::QuarticRealRoots roots =
+      math::solveQuarticRealFixed(coeffs.a4, coeffs.a3, coeffs.a2, coeffs.a1, coeffs.a0);
 
   bool found = false;
   double bestT = tMax;
-  for (double root : roots) {
+  for (int rootIndex = 0; rootIndex < roots.count; ++rootIndex) {
+    const double root = roots.values[static_cast<std::size_t>(rootIndex)];
     if (!std::isfinite(root) || root <= tMin || root >= bestT) {
       continue;
     }

@@ -2,6 +2,8 @@
 # Build directories and outputs
 # ------------------------------
 /build/
+build_plancheck
+build_plancheck_parallel
 build_serial_check
 /build-*/
 /cmake-build-*/
@@ -120,3 +122,9 @@ torirender_report.txt
 torirender_serial.o*
 torirender_serial.e*
 torirender_serial.*.log
+torirender_cpu.o*
+torirender_cpu.e*
+torirender_cpu.*.log
+torirender_gpu.o*
+torirender_gpu.e*
+torirender_gpu.*.log

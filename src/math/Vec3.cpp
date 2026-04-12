@@ -6,14 +6,17 @@
 
 namespace torirender {
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double Vec3::lengthSquared() const noexcept {
   return (x * x) + (y * y) + (z * z);
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double Vec3::length() const noexcept {
   return std::sqrt(lengthSquared());
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Vec3::normalized(double epsilon) const noexcept {
   const double len = length();
   if (len <= epsilon) {
@@ -22,23 +25,28 @@ Vec3 Vec3::normalized(double epsilon) const noexcept {
   return *this / len;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 void Vec3::normalize(double epsilon) noexcept {
   *this = normalized(epsilon);
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double Vec3::dot(const Vec3& other) const noexcept {
   return (x * other.x) + (y * other.y) + (z * other.z);
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Vec3::cross(const Vec3& other) const noexcept {
   return Vec3(
       (y * other.z) - (z * other.y), (z * other.x) - (x * other.z), (x * other.y) - (y * other.x));
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool Vec3::nearZero(double epsilon) const noexcept {
   return std::fabs(x) <= epsilon && std::fabs(y) <= epsilon && std::fabs(z) <= epsilon;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double& Vec3::operator[](std::size_t index) noexcept {
   assert(index < 3U);
   if (index == 0U) {
@@ -50,6 +58,7 @@ double& Vec3::operator[](std::size_t index) noexcept {
   return z;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 const double& Vec3::operator[](std::size_t index) const noexcept {
   assert(index < 3U);
   if (index == 0U) {
@@ -61,6 +70,7 @@ const double& Vec3::operator[](std::size_t index) const noexcept {
   return z;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3& Vec3::operator+=(const Vec3& rhs) noexcept {
   x += rhs.x;
   y += rhs.y;
@@ -68,6 +78,7 @@ Vec3& Vec3::operator+=(const Vec3& rhs) noexcept {
   return *this;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3& Vec3::operator-=(const Vec3& rhs) noexcept {
   x -= rhs.x;
   y -= rhs.y;
@@ -75,6 +86,7 @@ Vec3& Vec3::operator-=(const Vec3& rhs) noexcept {
   return *this;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3& Vec3::operator*=(double scalar) noexcept {
   x *= scalar;
   y *= scalar;
@@ -82,6 +94,7 @@ Vec3& Vec3::operator*=(double scalar) noexcept {
   return *this;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3& Vec3::operator/=(double scalar) noexcept {
   x /= scalar;
   y /= scalar;
@@ -89,47 +102,57 @@ Vec3& Vec3::operator/=(double scalar) noexcept {
   return *this;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 operator+(Vec3 lhs, const Vec3& rhs) noexcept {
   lhs += rhs;
   return lhs;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 operator-(Vec3 lhs, const Vec3& rhs) noexcept {
   lhs -= rhs;
   return lhs;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 operator-(const Vec3& value) noexcept {
   return Vec3(-value.x, -value.y, -value.z);
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 operator*(Vec3 value, double scalar) noexcept {
   value *= scalar;
   return value;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 operator*(double scalar, Vec3 value) noexcept {
   value *= scalar;
   return value;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 operator/(Vec3 value, double scalar) noexcept {
   value /= scalar;
   return value;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool operator==(const Vec3& lhs, const Vec3& rhs) noexcept {
   return lhs.x == rhs.x && lhs.y == rhs.y && lhs.z == rhs.z;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool operator!=(const Vec3& lhs, const Vec3& rhs) noexcept {
   return !(lhs == rhs);
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double dot(const Vec3& lhs, const Vec3& rhs) noexcept {
   return lhs.dot(rhs);
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 cross(const Vec3& lhs, const Vec3& rhs) noexcept {
   return lhs.cross(rhs);
 }

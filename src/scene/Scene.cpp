@@ -44,11 +44,13 @@ Scene::MaterialType parseMaterialType(const std::string& token) noexcept {
 }
 
 // reflect vector
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 reflect(const Vec3& direction, const Vec3& normal) noexcept {
   return direction - (2.0 * dot(direction, normal) * normal);
 }
 
 // simple hash to [0,1]
+TORIRENDER_ACC_ROUTINE_SEQ
 double hash01(const Vec3& seed, double offset) noexcept {
   const Vec3 q = seed + Vec3(offset, offset * 1.7, offset * 2.3);
   const double s = std::sin(dot(q, Vec3(12.9898, 78.233, 37.719))) * 43758.5453123;
@@ -56,6 +58,7 @@ double hash01(const Vec3& seed, double offset) noexcept {
 }
 
 // random unit vector (used for fuzz)
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 randomUnitVector(const Vec3& seed, int depth) noexcept {
   constexpr double kTwoPi = 6.283185307179586476925286766559;
   const double u = hash01(seed, 7.0 + static_cast<double>(depth) * 0.31);
@@ -67,6 +70,7 @@ Vec3 randomUnitVector(const Vec3& seed, int depth) noexcept {
 }
 
 // component-wise multiply
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 multiply(const Vec3& a, const Vec3& b) noexcept {
   return Vec3(a.x * b.x, a.y * b.y, a.z * b.z);
 }
@@ -110,97 +114,101 @@ Scene::Scene(const SceneConfig& config) noexcept
 }
 
 // BVH hit test
+TORIRENDER_ACC_ROUTINE_SEQ
 bool Scene::hit(const Ray& ray, HitRecord& hitRecord, double tMin, double tMax) const noexcept {
   return bvh_.hit(ray, hitRecord, tMin, tMax);
 }
 
 // entry ray tracing
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Scene::trace(const Ray& ray, int maxDepth) const noexcept {
   const int depth = maxDepth;
   return traceRecursive(ray, depth);
 }
 
 // recursive ray tracing
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Scene::traceRecursive(const Ray& ray, int depth) const noexcept {
-  // test torus
-  HitRecord torusHit{};
-  const bool hitTorus = hit(ray, torusHit, 1e-4);
+  Ray currentRay = ray;
+  Vec3 throughput(1.0, 1.0, 1.0);
+  Vec3 radiance{};
+  int depthRemaining = depth;
 
-  // test floor
-  HitRecord floorHit{};
-  const bool hitFloorSurface = hitFloor(
-      ray, floorHit, 1e-4, hitTorus ? torusHit.t : std::numeric_limits<double>::infinity());
+  while (true) {
+    HitRecord torusHit{};
+    const bool hitTorus = hit(currentRay, torusHit, 1e-4);
 
-  // background if nothing hit
-  if (!hitTorus && !hitFloorSurface) {
-    return background(ray);
-  }
+    HitRecord floorHit{};
+    const bool hitFloorSurface =
+        hitFloor(currentRay,
+                 floorHit,
+                 1e-4,
+                 hitTorus ? torusHit.t : std::numeric_limits<double>::infinity());
 
-  // choose closest hit
-  const bool useFloor = hitFloorSurface && (!hitTorus || floorHit.t < torusHit.t);
-  const HitRecord& hitRecord = useFloor ? floorHit : torusHit;
-
-  const Material material =
-      useFloor ? materialForFloorHit(hitRecord) : materialForTorusHit(hitRecord);
-
-  // local shading
-  const Vec3 rayDirection = ray.direction();
-  const Vec3 viewDirection = -rayDirection;
-  // Optimization worked out here: skip shadow-ray traversal when light is behind the surface.
-  const double visibility =
-      dot(hitRecord.normal, lightDirection_) > 0.0 ? directLightVisibility(hitRecord) : 0.0;
-
-  const Vec3 localShading = shader_.shade(material.baseColor,
-                                          hitRecord.normal,
-                                          lightDirection_,
-                                          viewDirection,
-                                          material.phong,
-                                          visibility,
-                                          material.type == MaterialType::Metal);
-
-  // stop recursion
-  if (depth <= 0) {
-    return localShading;
-  }
-
-  // metal reflection
-  if (material.type == MaterialType::Metal) {
-    // Optimization worked out here: reuse normalized ray direction and avoid extra normalize()
-    // input.
-    Vec3 reflectedDirection = reflect(rayDirection, hitRecord.normal).normalized();
-
-    // add fuzz
-    reflectedDirection =
-        (reflectedDirection + (material.fuzz * randomUnitVector(hitRecord.point, depth)))
-            .normalized();
-
-    // invalid reflection
-    if (dot(reflectedDirection, hitRecord.normal) <= 0.0) {
-      return 0.25 * localShading;
+    if (!hitTorus && !hitFloorSurface) {
+      radiance += multiply(throughput, background(currentRay));
+      return radiance;
     }
 
-    const Ray scattered(hitRecord.point + (1e-4 * hitRecord.normal), reflectedDirection);
-    const Vec3 bounced = traceRecursive(scattered, depth - 1);
+    const bool useFloor = hitFloorSurface && (!hitTorus || floorHit.t < torusHit.t);
+    const HitRecord& hitRecord = useFloor ? floorHit : torusHit;
+    const Material& material =
+        useFloor ? materialForFloorHit(hitRecord) : materialForTorusHit(hitRecord);
 
-    // blend reflection
-    return (0.12 * localShading) + (0.88 * multiply(material.baseColor, bounced));
+    const Vec3 rayDirection = currentRay.direction();
+    const Vec3 viewDirection = -rayDirection;
+    // Optimization worked out here: skip shadow-ray traversal when light is behind the surface.
+    const double visibility =
+        dot(hitRecord.normal, lightDirection_) > 0.0 ? directLightVisibility(hitRecord) : 0.0;
+
+    const Vec3 localShading = shader_.shade(material.baseColor,
+                                            hitRecord.normal,
+                                            lightDirection_,
+                                            viewDirection,
+                                            material.phong,
+                                            visibility,
+                                            material.type == MaterialType::Metal);
+
+    if (depthRemaining <= 0) {
+      radiance += multiply(throughput, localShading);
+      return radiance;
+    }
+
+    if (material.type == MaterialType::Metal) {
+      Vec3 reflectedDirection = reflect(rayDirection, hitRecord.normal).normalized();
+      reflectedDirection =
+          (reflectedDirection + (material.fuzz * randomUnitVector(hitRecord.point, depthRemaining)))
+              .normalized();
+
+      if (dot(reflectedDirection, hitRecord.normal) <= 0.0) {
+        radiance += multiply(throughput, 0.25 * localShading);
+        return radiance;
+      }
+
+      radiance += multiply(throughput, 0.12 * localShading);
+      throughput = multiply(throughput, 0.88 * material.baseColor);
+      currentRay = Ray(hitRecord.point + (1e-4 * hitRecord.normal), reflectedDirection);
+      --depthRemaining;
+      continue;
+    }
+
+    const double reflection = std::max(0.0, std::min(1.0, material.reflection));
+    if (reflection <= 0.0) {
+      radiance += multiply(throughput, localShading);
+      return radiance;
+    }
+
+    radiance += multiply(throughput, (1.0 - reflection) * localShading);
+    throughput *= reflection;
+
+    const Vec3 reflectedDirection = reflect(rayDirection, hitRecord.normal).normalized();
+    currentRay = Ray(hitRecord.point + (1e-4 * hitRecord.normal), reflectedDirection);
+    --depthRemaining;
   }
-
-  // diffuse + reflection mix
-  const double reflection = std::max(0.0, std::min(1.0, material.reflection));
-  if (reflection <= 0.0) {
-    return localShading;
-  }
-
-  const Vec3 reflectedDirection = reflect(rayDirection, hitRecord.normal).normalized();
-
-  const Ray reflectedRay(hitRecord.point + (1e-4 * hitRecord.normal), reflectedDirection);
-  const Vec3 reflectedColor = traceRecursive(reflectedRay, depth - 1);
-
-  return ((1.0 - reflection) * localShading) + (reflection * reflectedColor);
 }
 
 // sky gradient
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Scene::background(const Ray& ray) const noexcept {
   // Optimization worked out here: camera/reflection rays are already normalized.
   const double blend = 0.5 * (ray.direction().y + 1.0);
@@ -208,6 +216,7 @@ Vec3 Scene::background(const Ray& ray) const noexcept {
 }
 
 // shadow ray
+TORIRENDER_ACC_ROUTINE_SEQ
 double Scene::directLightVisibility(const HitRecord& hitRecord) const noexcept {
   // Optimization worked out here: lightDirection_ is pre-normalized in Scene constructor.
   const Vec3 shadowDirection = lightDirection_;
@@ -235,6 +244,7 @@ double Scene::directLightVisibility(const HitRecord& hitRecord) const noexcept {
 }
 
 // ray-plane intersection (floor)
+TORIRENDER_ACC_ROUTINE_SEQ
 bool Scene::hitFloor(const Ray& ray,
                      HitRecord& hitRecord,
                      double tMin,
@@ -258,7 +268,8 @@ bool Scene::hitFloor(const Ray& ray,
 }
 
 // choose closest torus material
-Scene::Material Scene::materialForTorusHit(const HitRecord& hitRecord) const noexcept {
+TORIRENDER_ACC_ROUTINE_SEQ
+const Scene::Material& Scene::materialForTorusHit(const HitRecord& hitRecord) const noexcept {
   if (hitRecord.primitiveId == 0) {
     return torusMaterialA_;
   }
@@ -272,7 +283,8 @@ Scene::Material Scene::materialForTorusHit(const HitRecord& hitRecord) const noe
 }
 
 // checkerboard floor
-Scene::Material Scene::materialForFloorHit(const HitRecord& hitRecord) const noexcept {
+TORIRENDER_ACC_ROUTINE_SEQ
+const Scene::Material& Scene::materialForFloorHit(const HitRecord& hitRecord) const noexcept {
   const int tx = static_cast<int>(std::floor(hitRecord.point.x * floorCheckerScale_));
   const int tz = static_cast<int>(std::floor(hitRecord.point.z * floorCheckerScale_));
   const bool lightTile = ((tx + tz) & 1) == 0;

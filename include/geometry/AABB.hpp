@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Accel.hpp"
 #include "math/Utils.hpp"
 #include "math/Vec3.hpp"
 
@@ -11,7 +12,9 @@ class AABB {
 
   AABB(const Vec3& minimum, const Vec3& maximum) noexcept;  // init bounds
 
+  TORIRENDER_ACC_ROUTINE_SEQ
   const Vec3& min() const noexcept;  // lower corner
+  TORIRENDER_ACC_ROUTINE_SEQ
   const Vec3& max() const noexcept;  // upper corner
 
   bool isValid() const noexcept;  // min <= max

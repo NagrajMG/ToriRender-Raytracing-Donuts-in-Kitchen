@@ -6,8 +6,12 @@ project(torirender VERSION 0.1.0 LANGUAGES CXX)
 option(TORIRENDER_BUILD_TESTS "Build unit tests" ON)
 option(TORIRENDER_ENABLE_MPI "Enable MPI integration when available" ON)
 option(TORIRENDER_ENABLE_OPENMP "Enable OpenMP integration when available" ON)
+option(TORIRENDER_ENABLE_OPENACC "Enable OpenACC for GPU runner when supported" ON)
+option(TORIRENDER_OPENACC_REPORT "Enable OpenACC compiler optimization reports" ON)
 option(TORIRENDER_FETCH_CATCH2 "Fetch Catch2 if not found" ON)
 option(TORIRENDER_FETCH_STB "Fetch stb headers if not found locally" ON)
+set(TORIRENDER_OPENACC_GPU_ARCH "ccall" CACHE STRING
+    "OpenACC GPU arch for NVHPC (example: cc80, ccall)")
 
 # Project-wide C++ language settings.
 set(CMAKE_CXX_STANDARD 17)
@@ -27,6 +31,7 @@ add_library(torirender_core
     src/geometry/BVH.cpp
     src/io/Image.cpp
     src/render/Shader.cpp
+    src/runtime/ResourceTracker.cpp
     src/scene/SceneConfig.cpp
     src/scene/Scene.cpp
 )
@@ -55,6 +60,45 @@ if(TORIRENDER_ENABLE_OPENMP)
     else()
         message(STATUS "OpenMP not found. Continuing without OpenMP link target.")
     endif()
+endif()
+
+set(TORIRENDER_OPENACC_ACTIVE OFF)
+set(TORIRENDER_OPENACC_COMPILE_FLAGS)
+set(TORIRENDER_OPENACC_LINK_FLAGS)
+
+if(TORIRENDER_ENABLE_OPENACC)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC" OR CMAKE_CXX_COMPILER_ID STREQUAL "PGI")
+        set(TORIRENDER_OPENACC_ACTIVE ON)
+        list(APPEND TORIRENDER_OPENACC_COMPILE_FLAGS -acc)
+        list(APPEND TORIRENDER_OPENACC_LINK_FLAGS -acc)
+
+        if(TORIRENDER_OPENACC_GPU_ARCH)
+            list(APPEND TORIRENDER_OPENACC_COMPILE_FLAGS -gpu=${TORIRENDER_OPENACC_GPU_ARCH})
+            list(APPEND TORIRENDER_OPENACC_LINK_FLAGS -gpu=${TORIRENDER_OPENACC_GPU_ARCH})
+            message(STATUS "OpenACC NVHPC GPU arch: ${TORIRENDER_OPENACC_GPU_ARCH}")
+        endif()
+
+        if(TORIRENDER_OPENACC_REPORT)
+            list(APPEND TORIRENDER_OPENACC_COMPILE_FLAGS -Minfo=accel)
+        endif()
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        set(TORIRENDER_OPENACC_ACTIVE ON)
+        list(APPEND TORIRENDER_OPENACC_COMPILE_FLAGS -fopenacc)
+        list(APPEND TORIRENDER_OPENACC_LINK_FLAGS -fopenacc)
+
+        if(TORIRENDER_OPENACC_REPORT)
+            list(APPEND TORIRENDER_OPENACC_COMPILE_FLAGS -fopt-info-optimized-omp)
+        endif()
+    else()
+        message(WARNING "OpenACC requested, but compiler has no configured OpenACC flags.")
+    endif()
+endif()
+
+if(TORIRENDER_OPENACC_ACTIVE)
+    target_compile_definitions(torirender_core PUBLIC TORIRENDER_USE_OPENACC=1)
+    target_compile_options(torirender_core PUBLIC ${TORIRENDER_OPENACC_COMPILE_FLAGS})
+    target_link_options(torirender_core PUBLIC ${TORIRENDER_OPENACC_LINK_FLAGS})
+    message(STATUS "OpenACC enabled for torirender_core.")
 endif()
 
 # stb is used for PNG writing support.
@@ -100,6 +144,19 @@ target_link_libraries(point_classifier PRIVATE torirender_core)
 # Renderer utility.
 add_executable(render_scene cli/render_scene.cpp)
 target_link_libraries(render_scene PRIVATE torirender_core)
+
+# CPU/GPU runtime runners.
+add_executable(torirender_cpu cli/render_engine.cpp)
+target_link_libraries(torirender_cpu PRIVATE torirender_core)
+target_compile_definitions(torirender_cpu PRIVATE TORIRENDER_EXEC_CPU=1)
+
+add_executable(torirender_gpu cli/render_engine.cpp)
+target_link_libraries(torirender_gpu PRIVATE torirender_core)
+target_compile_definitions(torirender_gpu PRIVATE TORIRENDER_EXEC_GPU=1)
+
+if(TORIRENDER_OPENACC_ACTIVE)
+    target_compile_definitions(torirender_gpu PRIVATE TORIRENDER_USE_OPENACC=1)
+endif()
 
 # Unit tests (Catch2) are enabled when available.
 include(CTest)

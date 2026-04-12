@@ -76,7 +76,7 @@ OUTPUT_PATH="${OUTPUT_DIR}"
 if [[ "${OUTPUT_PATH}" != /* ]]; then
   OUTPUT_PATH="${REPO_ROOT}/${OUTPUT_DIR}"
 fi
-METRICS_CSV="${OUTPUT_PATH}/render_metrics.csv"
+METRICS_CSV="${OUTPUT_PATH}/render_metrics_parallel.csv"
 RUN_REPORTS_DIR="${OUTPUT_PATH}/run_reports"
 RUN_REPORT="${RUN_REPORTS_DIR}/${RUN_ID}.txt"
 mkdir -p "${RUN_REPORTS_DIR}"
@@ -96,15 +96,20 @@ fi
 cmake -S "${REPO_ROOT}" -B "${BUILD_DIR}" \
   -DCMAKE_BUILD_TYPE=Release \
   -DTORIRENDER_ENABLE_MPI=OFF \
-  -DTORIRENDER_ENABLE_OPENMP=OFF
+  -DTORIRENDER_ENABLE_OPENMP=OFF \
+  -DTORIRENDER_ENABLE_OPENACC=OFF
 
-cmake --build "${BUILD_DIR}" --target render_scene -j1
+cmake --build "${BUILD_DIR}" --target torirender_cpu -j1
 
 # Run renderer and capture stdout/stderr in separate files.
 RENDER_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 start_epoch="$(date +%s)"
 set +e
-"${BUILD_DIR}/render_scene" "${CONFIG_PATH}" "${OUTPUT_DIR}" >"${STDOUT_LOG}" 2>"${STDERR_LOG}"
+"${BUILD_DIR}/torirender_cpu" "${CONFIG_PATH}" "${OUTPUT_DIR}" \
+  --mode serial \
+  --mpi-ranks 1 \
+  --omp-threads 1 \
+  >"${STDOUT_LOG}" 2>"${STDERR_LOG}"
 status=$?
 set -e
 end_epoch="$(date +%s)"

@@ -2,6 +2,7 @@
 
 #include <limits>
 
+#include "core/Accel.hpp"
 #include "core/Hit.hpp"
 #include "core/Ray.hpp"
 #include "geometry/BVH.hpp"
@@ -26,20 +27,28 @@ class Scene {
   Scene() noexcept;
   explicit Scene(const SceneConfig& config) noexcept;
 
+  TORIRENDER_ACC_ROUTINE_SEQ
   bool hit(const Ray& ray,
            HitRecord& hitRecord,
            double tMin = 1e-4,
            double tMax = std::numeric_limits<double>::infinity()) const noexcept;
 
+  TORIRENDER_ACC_ROUTINE_SEQ
   Vec3 trace(const Ray& ray, int maxDepth = 2) const noexcept;
 
  private:
+  TORIRENDER_ACC_ROUTINE_SEQ
   Vec3 traceRecursive(const Ray& ray, int depth) const noexcept;
+  TORIRENDER_ACC_ROUTINE_SEQ
   Vec3 background(const Ray& ray) const noexcept;
+  TORIRENDER_ACC_ROUTINE_SEQ
   double directLightVisibility(const HitRecord& hitRecord) const noexcept;
+  TORIRENDER_ACC_ROUTINE_SEQ
   bool hitFloor(const Ray& ray, HitRecord& hitRecord, double tMin, double tMax) const noexcept;
-  Material materialForTorusHit(const HitRecord& hitRecord) const noexcept;
-  Material materialForFloorHit(const HitRecord& hitRecord) const noexcept;
+  TORIRENDER_ACC_ROUTINE_SEQ
+  const Material& materialForTorusHit(const HitRecord& hitRecord) const noexcept;
+  TORIRENDER_ACC_ROUTINE_SEQ
+  const Material& materialForFloorHit(const HitRecord& hitRecord) const noexcept;
 
   Torus torusA_;
   Torus torusB_;

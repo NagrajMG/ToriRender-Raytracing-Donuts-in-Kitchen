@@ -81,23 +81,29 @@ Torus::Torus(double majorRadius,
 }
 
 // getters
+TORIRENDER_ACC_ROUTINE_SEQ
 double Torus::majorRadius() const noexcept {
   return majorRadius_;
 }
+TORIRENDER_ACC_ROUTINE_SEQ
 double Torus::minorRadius() const noexcept {
   return minorRadius_;
 }
+TORIRENDER_ACC_ROUTINE_SEQ
 const Vec3& Torus::center() const noexcept {
   return center_;
 }
+TORIRENDER_ACC_ROUTINE_SEQ
 TorusAxis Torus::axis() const noexcept {
   return axis_;
 }
+TORIRENDER_ACC_ROUTINE_SEQ
 const Vec3& Torus::axisDirection() const noexcept {
   return axisDirection_;
 }
 
 // squared distance from axis (used in torus equation)
+TORIRENDER_ACC_ROUTINE_SEQ
 double Torus::perpendicularSquared(const Vec3& localPoint) const noexcept {
   const double radialSquared = localPoint.lengthSquared();
   const double axial = dot(localPoint, axisDirection_);
@@ -105,6 +111,7 @@ double Torus::perpendicularSquared(const Vec3& localPoint) const noexcept {
 }
 
 // implicit torus function F(p)
+TORIRENDER_ACC_ROUTINE_SEQ
 double Torus::evaluate(const Vec3& point) const noexcept {
   const Vec3 localPoint = point - center_;
   const double s =
@@ -123,6 +130,7 @@ PointClassification Torus::classify(const Vec3& point, double epsilon) const noe
 }
 
 // gradient of implicit function (used for normal)
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Torus::gradient(const Vec3& point) const noexcept {
   const Vec3 localPoint = point - center_;
   const double radiusSquared = majorRadius_ * majorRadius_;
@@ -135,6 +143,7 @@ Vec3 Torus::gradient(const Vec3& point) const noexcept {
 }
 
 // normalized surface normal
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Torus::normal(const Vec3& point, double epsilon) const noexcept {
   return gradient(point).normalized(epsilon);
 }

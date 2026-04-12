@@ -9,6 +9,7 @@ namespace torirender {
 
 namespace {
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool hitAabb(const AABB& box, const Ray& ray, double tMin, double tMax) noexcept {
   for (int axis = 0; axis < 3; ++axis) {
     const double origin = ray.origin()[static_cast<std::size_t>(axis)];
@@ -63,6 +64,7 @@ const AABB& BVHNode::bounds() const noexcept {
   return bounds_;
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool BVHNode::hit(const Ray& ray, HitRecord& hitRecord, double tMin, double tMax) const noexcept {
   if (!hitAabb(bounds_, ray, tMin, tMax)) {
     return false;

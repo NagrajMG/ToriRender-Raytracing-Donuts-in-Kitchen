@@ -91,6 +91,22 @@ Vec3 Image::getPixel(int x, int y) const noexcept {
   return pixels_[indexOf(x, y)];
 }
 
+bool Image::setPixels(const std::vector<Vec3>& pixels) noexcept {
+  if (pixels.size() != pixels_.size()) {
+    return false;
+  }
+  pixels_ = pixels;
+  return true;
+}
+
+bool Image::setPixels(std::vector<Vec3>&& pixels) noexcept {
+  if (pixels.size() != pixels_.size()) {
+    return false;
+  }
+  pixels_ = std::move(pixels);
+  return true;
+}
+
 // Convert floating-point color [0,1] to byte [0,255]
 unsigned char Image::toByte(double channel) noexcept {
   const double clamped = math::clamp(toDisplaySpace(channel), 0.0, 1.0);  // avoid overflow

@@ -10,6 +10,7 @@ namespace torirender {
 namespace {
 
 // clamp color to [0,1]
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 clamp01(const Vec3& value) noexcept {
   return Vec3(math::clamp(value.x, 0.0, 1.0),
               math::clamp(value.y, 0.0, 1.0),
@@ -17,12 +18,14 @@ Vec3 clamp01(const Vec3& value) noexcept {
 }
 
 // component-wise multiplication (color * color)
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 multiply(const Vec3& a, const Vec3& b) noexcept {
   return Vec3(a.x * b.x, a.y * b.y, a.z * b.z);
 }
 
 }  // namespace
 
+TORIRENDER_ACC_ROUTINE_SEQ
 Vec3 Shader::shade(const Vec3& baseColor,
                    const Vec3& normal,
                    const Vec3& lightDirection,

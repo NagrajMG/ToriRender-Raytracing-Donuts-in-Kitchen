@@ -5,6 +5,7 @@
 
 namespace torirender {
 
+TORIRENDER_ACC_ROUTINE_SEQ
 double torusSignedDistance(const Torus& torus, const Vec3& point) noexcept {
   const Vec3 local = point - torus.center();
   const Vec3 axis = torus.axisDirection();
@@ -17,6 +18,7 @@ double torusSignedDistance(const Torus& torus, const Vec3& point) noexcept {
   return std::sqrt((q * q) + (axial * axial)) - torus.minorRadius();
 }
 
+TORIRENDER_ACC_ROUTINE_SEQ
 bool marchRayToTorus(const Ray& ray,
                      const Torus& torus,
                      HitRecord& hitRecord,

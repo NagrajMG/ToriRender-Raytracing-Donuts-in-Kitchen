@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Accel.hpp"
 #include "core/Ray.hpp"
 
 namespace torirender {
@@ -15,6 +16,7 @@ struct HitRecord {
 
   bool frontFace = true;
 
+  TORIRENDER_ACC_ROUTINE_SEQ
   void setFaceNormal(const Ray& ray, const Vec3& outwardNormal) noexcept {
     frontFace = dot(ray.direction(), outwardNormal) < 0.0;
     normal = frontFace ? outwardNormal : -outwardNormal;

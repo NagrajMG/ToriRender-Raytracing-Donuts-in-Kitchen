@@ -18,9 +18,11 @@ AABB::AABB() noexcept
 AABB::AABB(const Vec3& minimum, const Vec3& maximum) noexcept : min_(minimum), max_(maximum) {
 }  // good init
 
+TORIRENDER_ACC_ROUTINE_SEQ
 const Vec3& AABB::min() const noexcept {
   return min_;
 }  // lower corner
+TORIRENDER_ACC_ROUTINE_SEQ
 const Vec3& AABB::max() const noexcept {
   return max_;
 }  // upper corner

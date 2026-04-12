@@ -42,8 +42,16 @@ struct CameraConfig {
   std::uint64_t rngSeed = 1337ULL;
 };
 
+struct RuntimeConfig {
+  std::string mode = "serial";
+  int mpiRanks = 1;
+  int ompThreads = 1;
+  int heartbeatSeconds = 60;
+};
+
 struct SceneConfig {
   CameraConfig camera{};
+  RuntimeConfig runtime{};
   TorusConfig torusPrimary{};
   TorusConfig torusSecondary{};
   Vec3 lightDirection = Vec3(-0.34, 1.0, -0.25);

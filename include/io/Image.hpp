@@ -19,6 +19,8 @@ class Image {
 
   void setPixel(int x, int y, const Vec3& color) noexcept;  // write pixel
   Vec3 getPixel(int x, int y) const noexcept;               // read pixel
+  bool setPixels(const std::vector<Vec3>& pixels) noexcept;
+  bool setPixels(std::vector<Vec3>&& pixels) noexcept;
 
   bool savePPM(const std::string& filePath) const;  // save as .ppm
   bool savePNG(const std::string& filePath) const;  // save as .png

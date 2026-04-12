@@ -2,16 +2,17 @@
 
 #include <limits>
 
+#include "core/Accel.hpp"
 #include "core/Hit.hpp"
 #include "core/Ray.hpp"
 #include "geometry/Torus.hpp"
 
 namespace torirender {
 
-// signed distance from point to torus surface
+TORIRENDER_ACC_ROUTINE_SEQ
 double torusSignedDistance(const Torus& torus, const Vec3& point) noexcept;
 
-// ray marching intersection with torus
+TORIRENDER_ACC_ROUTINE_SEQ
 bool marchRayToTorus(const Ray& ray,
                      const Torus& torus,
                      HitRecord& hitRecord,

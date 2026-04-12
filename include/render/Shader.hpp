@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Accel.hpp"
 #include "math/Vec3.hpp"
 
 namespace torirender {
@@ -15,6 +16,7 @@ struct PhongParams {
 class Shader {
  public:
   // Optimization worked out here: normal/lightDirection/viewDirection are expected normalized.
+  TORIRENDER_ACC_ROUTINE_SEQ
   Vec3 shade(const Vec3& baseColor,
              const Vec3& normal,
              const Vec3& lightDirection,
