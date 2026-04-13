@@ -328,15 +328,29 @@ if [[ ${status} -eq 0 ]]; then
       # Build hostfile from PBS allocation to make MPI slot mapping deterministic.
       MPI_HOSTFILE_REL="results/${RUN_ID}.hostfile"
       if [[ -n "${PBS_NODEFILE:-}" && -f "${PBS_NODEFILE}" ]]; then
-        awk '
+        awk -v alloc_ncpus="${ALLOC_NCPUS}" '
           {
             host=$1;
             sub(/\/.*/, "", host);
             if (host != "") {
               count[host]++;
+              first_host = (first_host == "" ? host : first_host);
             }
           }
           END {
+            hosts = 0;
+            total = 0;
+            for (h in count) {
+              hosts++;
+              total += count[h];
+            }
+
+            # Some PBS setups list one line per node (not per core) in PBS_NODEFILE.
+            # For single-node jobs, force slots to allocated ncpus.
+            if (hosts == 1 && alloc_ncpus > total && first_host != "") {
+              count[first_host] = alloc_ncpus;
+            }
+
             for (h in count) {
               printf "%s slots=%d max_slots=%d\n", h, count[h], count[h];
             }
