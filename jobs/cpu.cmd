@@ -371,6 +371,7 @@ if [[ ${status} -eq 0 ]]; then
 
       "${MPIRUN_BIN}" --hostfile "${MPI_HOSTFILE_REL}" \
         -np "${MPI_RANKS}" \
+        --oversubscribe \
         --bind-to core --map-by slot:PE="${OMP_THREADS}" \
         ./build/torirender_cpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
         --mode parallel \
