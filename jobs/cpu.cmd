@@ -1,8 +1,6 @@
 #!/bin/bash
 
 #PBS -N torirender_cpu
-#PBS -q medium
-#PBS -l select=1:ncpus=40
 #PBS -l walltime=48:00:00
 #PBS -j oe
 #PBS -o /dev/null
