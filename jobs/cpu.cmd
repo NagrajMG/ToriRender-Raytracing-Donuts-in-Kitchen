@@ -1,8 +1,9 @@
 #!/bin/bash
 
 #PBS -N torirender_cpu
-#PBS -l select=1:ncpus=16
-#PBS -l walltime=24:00:00
+#PBS -q medium
+#PBS -l select=1:ncpus=40
+#PBS -l walltime=48:00:00
 #PBS -j oe
 #PBS -o /dev/null
 
@@ -81,30 +82,6 @@ parse_hms_to_seconds() {
   echo "$((10#${h} * 3600 + 10#${m} * 60 + 10#${s}))"
 }
 
-queue_core_limit() {
-  case "$1" in
-    small8) echo 8 ;;
-    small20) echo 20 ;;
-    small40) echo 40 ;;
-    medium) echo 40 ;;
-    long) echo 80 ;;
-    large) echo 520 ;;
-    *) echo 40 ;;
-  esac
-}
-
-queue_walltime_limit() {
-  case "$1" in
-    small8) echo "02:00:00" ;;
-    small20) echo "48:00:00" ;;
-    small40) echo "24:00:00" ;;
-    medium) echo "48:00:00" ;;
-    long) echo "48:00:00" ;;
-    large) echo "48:00:00" ;;
-    *) echo "24:00:00" ;;
-  esac
-}
-
 cleanup_scheduler_wrappers() {
   rm -f \
     "${WORKDIR}/torirender_cpu.o${JOB_ID_SHORT}" \
@@ -128,10 +105,20 @@ if [[ "${MODE}" != "serial" && "${MODE}" != "parallel" ]]; then
   exit 1
 fi
 
-QUEUE_NAME="${PBS_QUEUE:-${PBS_O_QUEUE:-small40}}"
+QUEUE_NAME="${PBS_QUEUE:-${PBS_O_QUEUE:-medium}}"
 ALLOC_NCPUS="${PBS_NCPUS:-${NCPUS:-1}}"
 if [[ ! "${ALLOC_NCPUS}" =~ ^[0-9]+$ ]] || ((ALLOC_NCPUS <= 0)); then
   echo "Invalid allocated CPU count: ${ALLOC_NCPUS}"
+  exit 1
+fi
+REQUIRED_NCPUS="${REQUIRED_NCPUS:-40}"
+if [[ ! "${REQUIRED_NCPUS}" =~ ^[0-9]+$ ]] || ((REQUIRED_NCPUS <= 0)); then
+  echo "Invalid REQUIRED_NCPUS=${REQUIRED_NCPUS}"
+  exit 1
+fi
+if ((ALLOC_NCPUS != REQUIRED_NCPUS)); then
+  echo "This job script expects exactly ${REQUIRED_NCPUS} CPUs. Got ${ALLOC_NCPUS}."
+  echo "Submit with: qsub -l select=1:ncpus=${REQUIRED_NCPUS} ..."
   exit 1
 fi
 
@@ -171,15 +158,9 @@ if [[ -z "${REQUESTED_WALLTIME}" ]]; then
   REQUESTED_WALLTIME="24:00:00"
 fi
 
-CORE_LIMIT="$(queue_core_limit "${QUEUE_NAME}")"
-WALL_LIMIT_HMS="$(queue_walltime_limit "${QUEUE_NAME}")"
 REQ_WALL_SEC="$(parse_hms_to_seconds "${REQUESTED_WALLTIME}")"
-MAX_WALL_SEC="$(parse_hms_to_seconds "${WALL_LIMIT_HMS}")"
-
-if ((ALLOC_NCPUS > CORE_LIMIT)); then
-  echo "Conservative policy check failed: queue ${QUEUE_NAME} allows up to ${CORE_LIMIT} cores."
-  exit 1
-fi
+MAX_WALLTIME_HMS="${MAX_WALLTIME_HMS:-48:00:00}"
+MAX_WALL_SEC="$(parse_hms_to_seconds "${MAX_WALLTIME_HMS}")"
 
 if ((REQ_WALL_SEC < 0 || MAX_WALL_SEC < 0)); then
   echo "Failed to parse walltime values for policy check."
@@ -187,7 +168,7 @@ if ((REQ_WALL_SEC < 0 || MAX_WALL_SEC < 0)); then
 fi
 
 if ((REQ_WALL_SEC > MAX_WALL_SEC)); then
-  echo "Conservative policy check failed: queue ${QUEUE_NAME} allows up to ${WALL_LIMIT_HMS}."
+  echo "Conservative policy check failed: requested walltime exceeds ${MAX_WALLTIME_HMS}."
   exit 1
 fi
 

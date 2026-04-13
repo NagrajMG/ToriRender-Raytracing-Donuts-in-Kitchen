@@ -44,6 +44,7 @@ RENDER_STDERR_LOG_REL="logs/${RUN_ID}.stderr.log"
 RUN_SUMMARY_LOG_REL="results/gpu_aqua_runs.log"
 RUN_REPORT_DIR_REL="output/run_reports"
 RUN_REPORT_FILE_REL="${RUN_REPORT_DIR_REL}/${RUN_ID}.txt"
+MPI_HOSTFILE_REL="results/${RUN_ID}.hostfile"
 
 CONFIG_PATH="${CONFIG_PATH:-config/scene.json}"
 OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-output}"
@@ -90,7 +91,12 @@ cleanup_scheduler_wrappers() {
     "${WORKDIR}/torirender_gpu.e${JOB_ID_FULL}" \
     "${WORKDIR}/torirender_gpu.\$PBS_JOBID.log"
 }
-trap cleanup_scheduler_wrappers EXIT
+
+cleanup_on_exit() {
+  cleanup_scheduler_wrappers
+  rm -rf "${SCRATCH_JOB_DIR}" 2>/dev/null || true
+}
+trap cleanup_on_exit EXIT
 
 exec >"${PBS_LOG}" 2>&1
 
@@ -312,8 +318,53 @@ if [[ ${status} -eq 0 ]]; then
     RENDER_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
     start_epoch="$(date +%s)"
 
+    # Build hostfile from PBS allocation for deterministic MPI slot mapping.
+    if [[ -n "${PBS_NODEFILE:-}" && -f "${PBS_NODEFILE}" ]]; then
+      awk -v alloc_ngpus="${ALLOC_NGPUS}" '
+        {
+          host=$1;
+          sub(/\/.*/, "", host);
+          if (host != "") {
+            count[host]++;
+            first_host = (first_host == "" ? host : first_host);
+          }
+        }
+        END {
+          hosts = 0;
+          total = 0;
+          for (h in count) {
+            hosts++;
+            total += count[h];
+          }
+
+          # Some PBS setups list one line per node in PBS_NODEFILE.
+          # For single-node GPU jobs, force slots to allocated ngpus.
+          if (hosts == 1 && alloc_ngpus > total && first_host != "") {
+            count[first_host] = alloc_ngpus;
+          }
+
+          for (h in count) {
+            printf "%s slots=%d max_slots=%d\n", h, count[h], count[h];
+          }
+        }
+      ' \
+        "${PBS_NODEFILE}" > "${MPI_HOSTFILE_REL}"
+    else
+      printf "%s slots=%s max_slots=%s\n" "$(hostname)" "${ALLOC_NGPUS}" "${ALLOC_NGPUS}" > "${MPI_HOSTFILE_REL}"
+    fi
+
+    if [[ ! -s "${MPI_HOSTFILE_REL}" ]]; then
+      printf "%s slots=%s max_slots=%s\n" "$(hostname)" "${ALLOC_NGPUS}" "${ALLOC_NGPUS}" > "${MPI_HOSTFILE_REL}"
+    fi
+
+    echo "mpi_hostfile=${MPI_HOSTFILE_REL}"
+    echo "mpi_hostfile_contents:"
+    cat "${MPI_HOSTFILE_REL}"
+
     set +e
-    "${MPIRUN_BIN}" -np "${MPI_RANKS}" --bind-to none --map-by slot \
+    "${MPIRUN_BIN}" --hostfile "${MPI_HOSTFILE_REL}" \
+      -np "${MPI_RANKS}" \
+      --bind-to none --map-by slot \
       ./build/torirender_gpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
       --mode parallel \
       --mpi-ranks "${MPI_RANKS}" \
@@ -447,19 +498,18 @@ fi
 
 if [[ ${status} -ne 0 ]]; then
   echo "GPU job failed with status ${status}."
-  echo "Scratch retained for debugging."
+  echo "Scratch cleaned."
   echo "Run report: ${RUN_REPORT_FILE_REL}"
   exit "${status}"
 fi
 
 if [[ "${csv_appended}" != "yes" ]]; then
   echo "GPU job completed but metrics CSV was not appended."
-  echo "Scratch retained for debugging."
+  echo "Scratch cleaned."
   echo "Run report: ${RUN_REPORT_FILE_REL}"
   exit 2
 fi
 
-rm -rf "${SCRATCH_JOB_DIR}"
 echo "AQuA GPU run completed successfully."
 echo "Outputs copied back to repo."
 echo "Run report: ${RUN_REPORT_FILE_REL}"
