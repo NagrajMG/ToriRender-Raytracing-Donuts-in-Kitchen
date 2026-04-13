@@ -110,28 +110,28 @@ if [[ ! "${ALLOC_NCPUS}" =~ ^[0-9]+$ ]] || ((ALLOC_NCPUS <= 0)); then
   exit 1
 fi
 
-if [[ "${MODE}" == "serial" ]]; then
-  DEFAULT_REQUIRED_NCPUS="${SERIAL_REQUIRED_NCPUS:-1}"
-else
-  DEFAULT_REQUIRED_NCPUS="${PARALLEL_REQUIRED_NCPUS:-40}"
-fi
-
-ENFORCE_NCPUS="${ENFORCE_NCPUS:-1}"
-if [[ ! "${ENFORCE_NCPUS}" =~ ^[0-9]+$ ]] || ((ENFORCE_NCPUS < 0)); then
+ENFORCE_NCPUS="${ENFORCE_NCPUS:-0}"
+if [[ ! "${ENFORCE_NCPUS}" =~ ^[0-9]+$ ]] || ((ENFORCE_NCPUS < 0 || ENFORCE_NCPUS > 1)); then
   echo "Invalid ENFORCE_NCPUS=${ENFORCE_NCPUS}"
   exit 1
 fi
 
-REQUIRED_NCPUS="${REQUIRED_NCPUS:-${DEFAULT_REQUIRED_NCPUS}}"
-if [[ ! "${REQUIRED_NCPUS}" =~ ^[0-9]+$ ]] || ((REQUIRED_NCPUS <= 0)); then
+REQUIRED_NCPUS="${REQUIRED_NCPUS:-}"
+if [[ -n "${REQUIRED_NCPUS}" ]] && ([[ ! "${REQUIRED_NCPUS}" =~ ^[0-9]+$ ]] || ((REQUIRED_NCPUS <= 0))); then
   echo "Invalid REQUIRED_NCPUS=${REQUIRED_NCPUS}"
   exit 1
 fi
 
-if ((ENFORCE_NCPUS == 1 && ALLOC_NCPUS != REQUIRED_NCPUS)); then
-  echo "This job script expects exactly ${REQUIRED_NCPUS} CPUs. Got ${ALLOC_NCPUS}."
-  echo "Submit with: qsub -l select=1:ncpus=${REQUIRED_NCPUS} ..."
-  exit 1
+if ((ENFORCE_NCPUS == 1)); then
+  if [[ -z "${REQUIRED_NCPUS}" ]]; then
+    echo "ENFORCE_NCPUS=1 requires REQUIRED_NCPUS to be set."
+    exit 1
+  fi
+  if ((ALLOC_NCPUS != REQUIRED_NCPUS)); then
+    echo "This job script expects exactly ${REQUIRED_NCPUS} CPUs. Got ${ALLOC_NCPUS}."
+    echo "Submit with: qsub -l select=1:ncpus=${REQUIRED_NCPUS} ..."
+    exit 1
+  fi
 fi
 
 MPI_RANKS="${MPI_RANKS:-1}"
@@ -197,7 +197,7 @@ echo "mode=${MODE}"
 echo "mpi_ranks=${MPI_RANKS}"
 echo "omp_threads=${OMP_THREADS}"
 echo "ncpus=${ALLOC_NCPUS}"
-echo "required_ncpus=${REQUIRED_NCPUS}"
+echo "required_ncpus=${REQUIRED_NCPUS:-none}"
 echo "enforce_ncpus=${ENFORCE_NCPUS}"
 echo "walltime=${REQUESTED_WALLTIME}"
 echo "pbs_log=${PBS_LOG_REL}"
