@@ -113,7 +113,12 @@ cleanup_scheduler_wrappers() {
     "${WORKDIR}/torirender_cpu.e${JOB_ID_FULL}" \
     "${WORKDIR}/torirender_cpu.\$PBS_JOBID.log"
 }
-trap cleanup_scheduler_wrappers EXIT
+
+cleanup_on_exit() {
+  cleanup_scheduler_wrappers
+  rm -rf "${SCRATCH_JOB_DIR}" 2>/dev/null || true
+}
+trap cleanup_on_exit EXIT
 
 # Route all job-script output to deterministic PBS log.
 exec >"${PBS_LOG}" 2>&1
@@ -511,19 +516,18 @@ fi
 
 if [[ ${status} -ne 0 ]]; then
   echo "CPU job failed with status ${status}."
-  echo "Scratch retained for debugging."
+  echo "Scratch cleaned."
   echo "Run report: ${RUN_REPORT_FILE_REL}"
   exit "${status}"
 fi
 
 if [[ "${csv_appended}" != "yes" ]]; then
   echo "CPU job completed but metrics CSV was not appended."
-  echo "Scratch retained for debugging."
+  echo "Scratch cleaned."
   echo "Run report: ${RUN_REPORT_FILE_REL}"
   exit 2
 fi
 
-rm -rf "${SCRATCH_JOB_DIR}"
 echo "AQuA CPU run completed successfully."
 echo "Outputs copied back to repo."
 echo "Run report: ${RUN_REPORT_FILE_REL}"
