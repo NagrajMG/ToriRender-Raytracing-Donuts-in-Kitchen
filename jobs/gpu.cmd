@@ -226,7 +226,8 @@ if command -v module >/dev/null 2>&1; then
   for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640; do
     module load "${gcc_mod}" >/dev/null 2>&1 && break
   done
-  for nvhpc_mod in nvhpc-25.7 nvhpc-23.5 nvhpc-21.11 nvhpc-21.7; do
+  # Prefer older NVHPC first to avoid missing libzstd runtime on some nodes.
+  for nvhpc_mod in nvhpc-23.5 nvhpc-21.11 nvhpc-21.7 nvhpc-25.7; do
     module load "${nvhpc_mod}" >/dev/null 2>&1 && break
   done
   for cuda_mod in cuda12.4 cuda12.2 cuda12.1 cuda11.7; do
