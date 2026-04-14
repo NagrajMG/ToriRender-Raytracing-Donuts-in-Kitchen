@@ -1,0 +1,45 @@
+================================================================================================================================================================
+                                                                     ToriRender Run Report                                                                      
+================================================================================================================================================================
+
+[Run Information]
+  Run ID:                    gpu_parallel_2026-04-14_time_16h22m07s
+  Type:                      aqua
+  Backend:                   gpu
+  Mode:                      parallel
+  Job ID:                    1730372.hn1
+  Status:                    FAILED (exit 127)
+
+[Timing]
+  Script Start (Machine):    2026-04-14 16:22:07 IST
+  Script End (Machine):      2026-04-14 16:22:10 IST
+  Script Duration:           3s
+  Render Start (Machine):    N/A
+  Render End (Machine):      N/A
+  Render Duration:           0s
+
+[Runtime Configuration]
+  Queue:                     gpuq
+  Allocated CPUs:            1
+  Allocated GPUs:            1
+  Walltime:                  02:00:00
+  MPI Ranks:                 1
+  OMP Threads:               1
+  Heartbeat Seconds:         60
+  OpenACC GPU Arch:          ccall
+  OpenACC Report:            OFF
+
+[Inputs and Outputs]
+  Config Path:               config/scene.json
+  Output Directory:          output
+  Status Directory:          output/status
+  Metrics CSV:               output/render_metrics_parallel.csv
+  CSV Row Appended:          NO
+  Latest Metrics Row:        cpu_serial_2026-04-13_time_21h26m56s,2026-04-13_time_21h26m56s,cpu,serial,cpu_1920x1080_ssp768_depth12_2026-04-13_time_21h26m56s.png,1920x1080,768,12,1,1,0,33432.741986
+
+[Logs]
+  PBS Log:                   logs/gpu_parallel_2026-04-14_time_16h22m07s.pbs.log
+  Render STDOUT:             logs/gpu_parallel_2026-04-14_time_16h22m07s.stdout.log
+  Render STDERR:             logs/gpu_parallel_2026-04-14_time_16h22m07s.stderr.log
+
+================================================================================================================================================================

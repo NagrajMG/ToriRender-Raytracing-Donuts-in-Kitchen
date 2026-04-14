@@ -4,3 +4,4 @@ cpu_serial_2026-04-13_time_01h04m42s,2026-04-13_time_01h04m42s,cpu,serial,cpu_64
 cpu_serial_2026-04-13_time_01h16m14s,2026-04-13_time_01h16m14s,cpu,serial,cpu_1280x720_ssp10_depth2_2026-04-13_time_01h16m14s.png,1280x720,10,2,1,1,0,156.386635
 cpu_parallel_2026-04-13_time_13h10m19s,2026-04-13_time_13h10m19s,cpu,parallel,cpu_1280x720_ssp10_depth2_2026-04-13_time_13h10m19s.png,1280x720,10,2,4,5,0,20.037682
 cpu_parallel_2026-04-13_time_18h49m18s,2026-04-13_time_18h49m18s,cpu,parallel,cpu_1280x720_ssp10_depth2_2026-04-13_time_18h49m18s.png,1280x720,10,2,8,5,0,13.725528
+cpu_serial_2026-04-13_time_21h26m56s,2026-04-13_time_21h26m56s,cpu,serial,cpu_1920x1080_ssp768_depth12_2026-04-13_time_21h26m56s.png,1920x1080,768,12,1,1,0,33432.741986
