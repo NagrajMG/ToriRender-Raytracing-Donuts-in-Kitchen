@@ -1,7 +1,6 @@
 #!/bin/bash
 
 #PBS -N torirender_cpu
-#PBS -l walltime=48:00:00
 #PBS -j oe
 #PBS -o /dev/null
 

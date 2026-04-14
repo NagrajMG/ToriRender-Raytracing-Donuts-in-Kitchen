@@ -1,9 +1,6 @@
 #!/bin/bash
 
 #PBS -N torirender_gpu
-#PBS -q gpuq
-#PBS -l select=1:ncpus=16:ngpus=4
-#PBS -l walltime=48:00:00
 #PBS -j oe
 #PBS -o /dev/null
 
