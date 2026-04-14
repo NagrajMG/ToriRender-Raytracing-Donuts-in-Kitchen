@@ -222,17 +222,21 @@ safe_source /usr/share/Modules/init/bash
 
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
-  for cmake_mod in cmake3.26 cmake3.20 cmake3.30 cmake; do
+  # Keep only module names verified in AQuA `module avail`.
+  for cmake_mod in cmake3.30 cmake3.26 cmake3.20 cmake3.18 cmake3.14; do
     module load "${cmake_mod}" >/dev/null 2>&1 && break
   done
-  for nvhpc_mod in nvhpc-25.7 nvhpc-23.5 nvhpc-21.11; do
+  for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640; do
+    module load "${gcc_mod}" >/dev/null 2>&1 && break
+  done
+  for nvhpc_mod in nvhpc-25.7 nvhpc-23.5 nvhpc-21.11 nvhpc-21.7; do
     module load "${nvhpc_mod}" >/dev/null 2>&1 && break
   done
   for cuda_mod in cuda12.4 cuda12.2 cuda12.1 cuda11.7; do
     module load "${cuda_mod}" >/dev/null 2>&1 && break
   done
   if ! command -v mpirun >/dev/null 2>&1; then
-    for mpi_mod in openmpi415 openmpi411 openmpi405 openmpi404 openmpi406 openmpi316; do
+    for mpi_mod in openmpi415 openmpi411 openmpi405 openmpi404 openmpi406 openmpi316 openmpi506 openmpi501; do
       module load "${mpi_mod}" >/dev/null 2>&1 && break
     done
   fi
@@ -253,6 +257,14 @@ fi
 MPIRUN_BIN=""
 if command -v mpirun >/dev/null 2>&1; then
   MPIRUN_BIN="$(command -v mpirun)"
+fi
+
+if command -v g++ >/dev/null 2>&1; then
+  GXX_LIBSTDCPP="$(g++ -print-file-name=libstdc++.so.6 2>/dev/null || true)"
+  if [[ -n "${GXX_LIBSTDCPP}" && "${GXX_LIBSTDCPP}" != "libstdc++.so.6" ]]; then
+    GXX_LIB_DIR="$(dirname "${GXX_LIBSTDCPP}")"
+    export LD_LIBRARY_PATH="${GXX_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+  fi
 fi
 
 echo "cmake_bin=${CMAKE_BIN:-missing}"
