@@ -219,8 +219,8 @@ safe_source /usr/share/Modules/init/bash
 
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
-  # Keep only module names verified in AQuA `module avail`.
-  for cmake_mod in cmake3.30 cmake3.26 cmake3.20 cmake3.18 cmake3.14; do
+  # Prefer cmake3.26 on AQuA (cmake3.30 may miss runtime libs on some nodes).
+  for cmake_mod in cmake3.26 cmake3.20 cmake3.18 cmake3.14 cmake3.30; do
     module load "${cmake_mod}" >/dev/null 2>&1 && break
   done
   for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640; do
