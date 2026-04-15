@@ -1,6 +1,5 @@
 #include "core/Camera.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "math/Utils.hpp"
@@ -34,6 +33,11 @@ Vec3 fallbackUpFor(const Vec3& w) noexcept {
     return Vec3(0.0, 1.0, 0.0);  // default up (landscape)
   }
   return Vec3(1.0, 0.0, 0.0);  // alternate up
+}
+
+TORIRENDER_ACC_ROUTINE_SEQ
+double clampForRay(double value, double lo, double hi) noexcept {
+  return value < lo ? lo : (value > hi ? hi : value);
 }
 
 }  // namespace
@@ -115,8 +119,8 @@ int Camera::imageHeight() const noexcept {
 
 TORIRENDER_ACC_ROUTINE_SEQ
 Ray Camera::getRay(double pixelX, double pixelY) const noexcept {
-  const double i = std::clamp(pixelX, 0.0, static_cast<double>(imageWidth_ - 1));
-  const double j = std::clamp(pixelY, 0.0, static_cast<double>(imageHeight_ - 1));
+  const double i = clampForRay(pixelX, 0.0, static_cast<double>(imageWidth_ - 1));
+  const double j = clampForRay(pixelY, 0.0, static_cast<double>(imageHeight_ - 1));
 
   const Vec3 pixelCenter = pixel00Loc_ + (i * pixelDeltaU_) + (j * pixelDeltaV_);
 
