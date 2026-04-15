@@ -266,12 +266,21 @@ fi
 # Debug helper for NVHPC LLVM runtime dependency on libzstd.so.1.
 ZSTD_LIB=""
 ZSTD_LIB_DIR=""
-if command -v find >/dev/null 2>&1; then
-  ZSTD_LIB="$(find /lfs/sware -name "libzstd.so.1" 2>/dev/null | head -n 1 || true)"
-  if [[ -n "${ZSTD_LIB}" ]]; then
-    ZSTD_LIB_DIR="$(dirname "${ZSTD_LIB}")"
-    export LD_LIBRARY_PATH="${ZSTD_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+for zstd_candidate in \
+  "/lfs/sware/nvhpc25.7/Linux_x86_64/25.7/compilers/lib" \
+  "/lfs/sware/hpc_sdk/Linux_x86_64/23.5/compilers/lib" \
+  "/lfs/sware/hpc_sdk/Linux_x86_64/20.7/compilers/lib" \
+  "/lfs/sware/cuda-12.4/lib64" \
+  "/lfs/sware/cuda-10.1/lib64"; do
+  if [[ -f "${zstd_candidate}/libzstd.so.1" ]]; then
+    ZSTD_LIB="${zstd_candidate}/libzstd.so.1"
+    ZSTD_LIB_DIR="${zstd_candidate}"
+    break
   fi
+done
+
+if [[ -n "${ZSTD_LIB_DIR}" ]]; then
+  export LD_LIBRARY_PATH="${ZSTD_LIB_DIR}:${LD_LIBRARY_PATH:-}"
 fi
 
 MPIRUN_BIN=""
