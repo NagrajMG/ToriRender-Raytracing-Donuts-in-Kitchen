@@ -47,14 +47,15 @@ CONFIG_PATH="${CONFIG_PATH:-config/scene.json}"
 OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-output}"
 METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics_parallel.csv"
 STATUS_DIR_REL="${OUTPUT_DIR_NAME}/status"
+
 OPENACC_GPU_ARCH="${OPENACC_GPU_ARCH:-ccall}"
 OPENACC_REPORT="${OPENACC_REPORT:-0}"
 OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-10.1}"
+
 OPENACC_GPU_FLAGS="${OPENACC_GPU_ARCH}"
 if [[ "${OPENACC_GPU_FLAGS}" != *cuda* && -n "${OPENACC_CUDA_VERSION}" ]]; then
   OPENACC_GPU_FLAGS="${OPENACC_GPU_FLAGS},cuda${OPENACC_CUDA_VERSION}"
 fi
-LEGACY_NVHPC_ROOT="${LEGACY_NVHPC_ROOT:-/lfs/sware/hpc_sdk/Linux_x86_64/20.7}"
 
 build_divider() {
   local width="$1"
@@ -200,6 +201,7 @@ if command -v rsync >/dev/null 2>&1; then
     --exclude "build" \
     --exclude "logs" \
     --exclude "results" \
+    --exclude "output" \
     "${WORKDIR}/" "${SCRATCH_REPO}/"
 else
   rm -rf "${SCRATCH_REPO}"
@@ -223,33 +225,25 @@ safe_source() {
 safe_source /etc/profile.d/modules.sh
 safe_source /usr/share/Modules/init/bash
 
-if command -v module >/dev/null 2>&1; then
-  module purge >/dev/null 2>&1 || true
-  # Fixed module set (no fallback loops).
-  module load cmake3.26 >/dev/null 2>&1 || true
-  module load gcc10.1.0 >/dev/null 2>&1 || true
-  module load nvhpc-21.11 >/dev/null 2>&1 || true
-  module load cuda10.1 >/dev/null 2>&1 || true
-  module load openmpi415 >/dev/null 2>&1 || true
+if ! command -v module >/dev/null 2>&1; then
+  echo "Environment Modules is not available."
+  exit 1
 fi
 
-# Prefer known working legacy NVHPC stack when available on cluster.
-NVHPC_ROOT_ACTIVE=""
-if [[ -x "${LEGACY_NVHPC_ROOT}/compilers/bin/nvc++" ]]; then
-  NVHPC_ROOT_ACTIVE="${LEGACY_NVHPC_ROOT}"
-  export PATH="${LEGACY_NVHPC_ROOT}/compilers/bin:${LEGACY_NVHPC_ROOT}/comm_libs/mpi/bin:${PATH}"
-  export LD_LIBRARY_PATH="${LEGACY_NVHPC_ROOT}/compilers/lib:${LEGACY_NVHPC_ROOT}/compilers/lib64:${LD_LIBRARY_PATH:-}"
-fi
-
-CUDA_HOME=""
-if command -v nvcc >/dev/null 2>&1; then
-  CUDA_HOME="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd 2>/dev/null || true)"
-  if [[ -n "${CUDA_HOME}" ]]; then
-    export CUDA_HOME
-    export NVHPC_CUDA_HOME="${CUDA_HOME}"
-    export NVCOMPILER_ACC_CUDA_HOME="${CUDA_HOME}"
+require_module() {
+  local name="$1"
+  if ! module load "${name}" >/dev/null 2>&1; then
+    echo "Failed to load required module: ${name}"
+    exit 1
   fi
-fi
+}
+
+module purge >/dev/null 2>&1 || true
+require_module cmake3.26
+require_module gcc10.1.0
+require_module nvhpc-21.11
+require_module cuda10.1
+require_module openmpi415
 
 CMAKE_BIN=""
 if command -v cmake >/dev/null 2>&1; then
@@ -263,12 +257,54 @@ if command -v nvc++ >/dev/null 2>&1; then
   CXX_BIN="$(command -v nvc++)"
 fi
 
-# Debug helper for NVHPC LLVM runtime dependency on libzstd.so.1.
+MPIRUN_BIN=""
+if command -v mpirun >/dev/null 2>&1; then
+  MPIRUN_BIN="$(command -v mpirun)"
+fi
+
+MPI_CXX_BIN=""
+if command -v mpic++ >/dev/null 2>&1; then
+  MPI_CXX_BIN="$(command -v mpic++)"
+elif command -v mpicxx >/dev/null 2>&1; then
+  MPI_CXX_BIN="$(command -v mpicxx)"
+fi
+
+MPI_C_BIN=""
+if command -v mpicc >/dev/null 2>&1; then
+  MPI_C_BIN="$(command -v mpicc)"
+fi
+
+CUDA_HOME=""
+if command -v nvcc >/dev/null 2>&1; then
+  CUDA_HOME="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd 2>/dev/null || true)"
+  if [[ -n "${CUDA_HOME}" ]]; then
+    export CUDA_HOME
+    export NVHPC_CUDA_HOME="${CUDA_HOME}"
+    export NVCOMPILER_ACC_CUDA_HOME="${CUDA_HOME}"
+  fi
+fi
+
+GXX_BIN=""
+GXX_LIB_DIR=""
+GXX_ROOT=""
+if command -v g++ >/dev/null 2>&1; then
+  GXX_BIN="$(command -v g++)"
+  GXX_LIBSTDCPP="$(g++ -print-file-name=libstdc++.so.6 2>/dev/null || true)"
+  GXX_ROOT="$(cd "$(dirname "${GXX_BIN}")/.." && pwd 2>/dev/null || true)"
+  if [[ -n "${GXX_LIBSTDCPP}" && "${GXX_LIBSTDCPP}" != "libstdc++.so.6" ]]; then
+    GXX_LIB_DIR="$(dirname "${GXX_LIBSTDCPP}")"
+    export LD_LIBRARY_PATH="${GXX_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LIBRARY_PATH="${GXX_LIB_DIR}:${LIBRARY_PATH:-}"
+  fi
+fi
+
+# Optional zstd resolution for NVHPC LLVM tools
 ZSTD_LIB=""
 ZSTD_LIB_DIR=""
 for zstd_candidate in \
   "/lfs/sware/nvhpc25.7/Linux_x86_64/25.7/compilers/lib" \
   "/lfs/sware/hpc_sdk/Linux_x86_64/23.5/compilers/lib" \
+  "/lfs/sware/hpc_sdk/Linux_x86_64/21.11/compilers/lib" \
   "/lfs/sware/hpc_sdk/Linux_x86_64/20.7/compilers/lib" \
   "/lfs/sware/cuda-12.4/lib64" \
   "/lfs/sware/cuda-10.1/lib64"; do
@@ -283,53 +319,6 @@ if [[ -n "${ZSTD_LIB_DIR}" ]]; then
   export LD_LIBRARY_PATH="${ZSTD_LIB_DIR}:${LD_LIBRARY_PATH:-}"
 fi
 
-MPIRUN_BIN=""
-if command -v mpirun >/dev/null 2>&1; then
-  MPIRUN_BIN="$(command -v mpirun)"
-fi
-
-MPI_CXX_BIN=""
-MPI_C_BIN=""
-if [[ -n "${NVHPC_ROOT_ACTIVE}" ]]; then
-  if [[ -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpic++" ]]; then
-    MPI_CXX_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpic++"
-  elif [[ -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicxx" ]]; then
-    MPI_CXX_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicxx"
-  fi
-  if [[ -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicc" ]]; then
-    MPI_C_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicc"
-  fi
-  if [[ -z "${MPIRUN_BIN}" && -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpirun" ]]; then
-    MPIRUN_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpirun"
-  fi
-fi
-
-if [[ -z "${MPI_CXX_BIN}" ]]; then
-  if command -v mpic++ >/dev/null 2>&1; then
-    MPI_CXX_BIN="$(command -v mpic++)"
-  elif command -v mpicxx >/dev/null 2>&1; then
-    MPI_CXX_BIN="$(command -v mpicxx)"
-  fi
-fi
-if [[ -z "${MPI_C_BIN}" ]] && command -v mpicc >/dev/null 2>&1; then
-  MPI_C_BIN="$(command -v mpicc)"
-fi
-
-GXX_BIN=""
-GXX_LIB_DIR=""
-GXX_ROOT=""
-if command -v g++ >/dev/null 2>&1; then
-  GXX_BIN="$(command -v g++)"
-  GXX_LIBSTDCPP="$(g++ -print-file-name=libstdc++.so.6 2>/dev/null || true)"
-  GXX_ROOT="$(cd "$(dirname "${GXX_BIN}")/.." && pwd 2>/dev/null || true)"
-  if [[ -n "${GXX_LIBSTDCPP}" && "${GXX_LIBSTDCPP}" != "libstdc++.so.6" ]]; then
-    GXX_LIB_DIR="$(dirname "${GXX_LIBSTDCPP}")"
-    export LD_LIBRARY_PATH="${GXX_LIB_DIR}:${LD_LIBRARY_PATH:-}"
-    export LIBRARY_PATH="${GXX_LIB_DIR}:${LIBRARY_PATH:-}"
-    export LDFLAGS="-L${GXX_LIB_DIR} ${LDFLAGS:-}"
-  fi
-fi
-
 NVHPC_VERSION_STR=""
 NVHPC_MAJOR=0
 if [[ -n "${CXX_BIN}" ]]; then
@@ -337,29 +326,29 @@ if [[ -n "${CXX_BIN}" ]]; then
   if [[ "${NVHPC_VERSION_STR}" =~ ([0-9]+)\.([0-9]+) ]]; then
     NVHPC_MAJOR="${BASH_REMATCH[1]}"
   fi
-  if [[ ${NVHPC_MAJOR} -eq 0 && "${CXX_BIN}" == *"/20.7/"* ]]; then
-    NVHPC_MAJOR=20
-    NVHPC_VERSION_STR="NVHPC 20.7"
-  fi
 fi
 
 CMAKE_EXTRA_ARGS=()
+
+# For newer NVHPC, help it locate GCC toolchain.
+# For 21.11, do NOT inject -gcc-name=... because that caused your failure.
 if [[ -n "${GXX_ROOT}" && ${NVHPC_MAJOR} -ge 22 ]]; then
   CMAKE_EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=--gcc-toolchain=${GXX_ROOT}")
-elif [[ -n "${GXX_BIN}" && ${NVHPC_MAJOR} -gt 0 && ${NVHPC_MAJOR} -lt 22 ]]; then
-  # NVHPC 20.x does not support --gcc-toolchain; use gcc-name instead.
-  CMAKE_EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=-gcc-name=${GXX_BIN}")
 fi
+
 if [[ -n "${GXX_LIB_DIR}" ]]; then
   CMAKE_EXTRA_ARGS+=("-DCMAKE_EXE_LINKER_FLAGS=-L${GXX_LIB_DIR}")
   CMAKE_EXTRA_ARGS+=("-DCMAKE_SHARED_LINKER_FLAGS=-L${GXX_LIB_DIR}")
 fi
+
 if [[ -n "${MPI_CXX_BIN}" ]]; then
   CMAKE_EXTRA_ARGS+=("-DMPI_CXX_COMPILER=${MPI_CXX_BIN}")
 fi
+
 if [[ -n "${MPI_C_BIN}" ]]; then
   CMAKE_EXTRA_ARGS+=("-DMPI_C_COMPILER=${MPI_C_BIN}")
 fi
+
 if [[ -n "${MPIRUN_BIN}" ]]; then
   CMAKE_EXTRA_ARGS+=("-DMPIEXEC_EXECUTABLE=${MPIRUN_BIN}")
 fi
@@ -372,7 +361,6 @@ echo "mpi_c_bin=${MPI_C_BIN:-missing}"
 echo "gxx_bin=${GXX_BIN:-missing}"
 echo "gxx_lib_dir=${GXX_LIB_DIR:-missing}"
 echo "gxx_root=${GXX_ROOT:-missing}"
-echo "nvhpc_root_active=${NVHPC_ROOT_ACTIVE:-module}"
 echo "nvhpc_version=${NVHPC_VERSION_STR:-unknown}"
 echo "nvhpc_major=${NVHPC_MAJOR}"
 echo "cuda_home=${CUDA_HOME:-missing}"
@@ -384,6 +372,7 @@ if [[ -n "${CXX_BIN}" ]]; then
   NVC_COMPILER_DIR="$(cd "$(dirname "${CXX_BIN}")/.." && pwd 2>/dev/null || true)"
   LLC_BIN="${NVC_COMPILER_DIR}/share/llvm/bin/llc"
 fi
+
 if [[ -x "${LLC_BIN}" ]]; then
   echo "llc_bin=${LLC_BIN}"
   echo "llc_missing_deps:"
@@ -416,7 +405,6 @@ if [[ -z "${CMAKE_BIN}" || -z "${CXX_BIN}" ]]; then
     fi
     if [[ -z "${CXX_BIN}" ]]; then
       echo "nvc++ not found in PATH."
-      echo "Load one NVHPC module before qsub, for example: module load nvhpc-21.11"
     fi
   } >"${RENDER_STDERR_LOG_REL}"
 else
@@ -450,12 +438,11 @@ if [[ ${status} -eq 0 ]]; then
   if [[ -z "${MPIRUN_BIN}" ]]; then
     status=127
     : >"${RENDER_STDOUT_LOG_REL}"
-    echo "mpirun not found in PATH" >"${RENDER_STDERR_LOG_REL}"
+    echo "mpirun not found in PATH." >"${RENDER_STDERR_LOG_REL}"
   else
     RENDER_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
     start_epoch="$(date +%s)"
 
-    # Build hostfile from PBS allocation for deterministic MPI slot mapping.
     if [[ -n "${PBS_NODEFILE:-}" && -f "${PBS_NODEFILE}" ]]; then
       awk -v alloc_ngpus="${ALLOC_NGPUS}" '
         {
@@ -474,8 +461,6 @@ if [[ ${status} -eq 0 ]]; then
             total += count[h];
           }
 
-          # Some PBS setups list one line per node in PBS_NODEFILE.
-          # For single-node GPU jobs, force slots to allocated ngpus.
           if (hosts == 1 && alloc_ngpus > total && first_host != "") {
             count[first_host] = alloc_ngpus;
           }
@@ -484,8 +469,7 @@ if [[ ${status} -eq 0 ]]; then
             printf "%s slots=%d max_slots=%d\n", h, count[h], count[h];
           }
         }
-      ' \
-        "${PBS_NODEFILE}" > "${MPI_HOSTFILE_REL}"
+      ' "${PBS_NODEFILE}" > "${MPI_HOSTFILE_REL}"
     else
       printf "%s slots=%s max_slots=%s\n" "$(hostname)" "${ALLOC_NGPUS}" "${ALLOC_NGPUS}" > "${MPI_HOSTFILE_REL}"
     fi
