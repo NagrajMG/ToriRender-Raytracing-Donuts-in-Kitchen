@@ -54,6 +54,7 @@ OPENACC_GPU_FLAGS="${OPENACC_GPU_ARCH}"
 if [[ "${OPENACC_GPU_FLAGS}" != *cuda* && -n "${OPENACC_CUDA_VERSION}" ]]; then
   OPENACC_GPU_FLAGS="${OPENACC_GPU_FLAGS},cuda${OPENACC_CUDA_VERSION}"
 fi
+LEGACY_NVHPC_ROOT="${LEGACY_NVHPC_ROOT:-/lfs/sware/hpc_sdk/Linux_x86_64/20.7}"
 
 build_divider() {
   local width="$1"
@@ -246,6 +247,14 @@ if command -v module >/dev/null 2>&1; then
   fi
 fi
 
+# Prefer known working legacy NVHPC stack when available on cluster.
+NVHPC_ROOT_ACTIVE=""
+if [[ -x "${LEGACY_NVHPC_ROOT}/compilers/bin/nvc++" ]]; then
+  NVHPC_ROOT_ACTIVE="${LEGACY_NVHPC_ROOT}"
+  export PATH="${LEGACY_NVHPC_ROOT}/compilers/bin:${LEGACY_NVHPC_ROOT}/comm_libs/mpi/bin:${PATH}"
+  export LD_LIBRARY_PATH="${LEGACY_NVHPC_ROOT}/compilers/lib:${LEGACY_NVHPC_ROOT}/compilers/lib64:${LD_LIBRARY_PATH:-}"
+fi
+
 CUDA_HOME=""
 if command -v nvcc >/dev/null 2>&1; then
   CUDA_HOME="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd 2>/dev/null || true)"
@@ -303,6 +312,7 @@ echo "mpirun_bin=${MPIRUN_BIN:-missing}"
 echo "gxx_bin=${GXX_BIN:-missing}"
 echo "gxx_lib_dir=${GXX_LIB_DIR:-missing}"
 echo "gxx_root=${GXX_ROOT:-missing}"
+echo "nvhpc_root_active=${NVHPC_ROOT_ACTIVE:-module}"
 echo "cuda_home=${CUDA_HOME:-missing}"
 
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH || true
