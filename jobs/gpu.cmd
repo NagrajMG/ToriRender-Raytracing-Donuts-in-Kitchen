@@ -225,26 +225,12 @@ safe_source /usr/share/Modules/init/bash
 
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
-  # Prefer cmake3.26 on AQuA (cmake3.30 may miss runtime libs on some nodes).
-  for cmake_mod in cmake3.26 cmake3.20 cmake3.18 cmake3.14 cmake3.30; do
-    module load "${cmake_mod}" >/dev/null 2>&1 && break
-  done
-  for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0 gcc10.3.0 gcc10.1.0 gcc920 gcc640; do
-    module load "${gcc_mod}" >/dev/null 2>&1 && break
-  done
-  # Prefer older NVHPC first to avoid missing libzstd runtime on some nodes.
-  for nvhpc_mod in nvhpc-23.5 nvhpc-21.11 nvhpc-21.7 nvhpc-25.7; do
-    module load "${nvhpc_mod}" >/dev/null 2>&1 && break
-  done
-  # Prefer CUDA 10.1 first for legacy driver nodes on AQuA.
-  for cuda_mod in cuda10.1 cuda10.0 cuda11.7 cuda12.1 cuda12.2 cuda12.4; do
-    module load "${cuda_mod}" >/dev/null 2>&1 && break
-  done
-  if ! command -v mpirun >/dev/null 2>&1; then
-    for mpi_mod in openmpi415 openmpi411 openmpi405 openmpi404 openmpi406 openmpi316 openmpi506 openmpi501; do
-      module load "${mpi_mod}" >/dev/null 2>&1 && break
-    done
-  fi
+  # Fixed module set (no fallback loops).
+  module load cmake3.26 >/dev/null 2>&1 || true
+  module load gcc13.3.0 >/dev/null 2>&1 || true
+  module load nvhpc-23.5 >/dev/null 2>&1 || true
+  module load cuda10.1 >/dev/null 2>&1 || true
+  module load openmpi415 >/dev/null 2>&1 || true
 fi
 
 # Prefer known working legacy NVHPC stack when available on cluster.
@@ -297,8 +283,17 @@ if command -v g++ >/dev/null 2>&1; then
   fi
 fi
 
+NVHPC_VERSION_STR=""
+NVHPC_MAJOR=0
+if [[ -n "${CXX_BIN}" ]]; then
+  NVHPC_VERSION_STR="$("${CXX_BIN}" --version 2>/dev/null | head -n 1 || true)"
+  if [[ "${NVHPC_VERSION_STR}" =~ ([0-9]+)\.([0-9]+) ]]; then
+    NVHPC_MAJOR="${BASH_REMATCH[1]}"
+  fi
+fi
+
 CMAKE_EXTRA_ARGS=()
-if [[ -n "${GXX_ROOT}" ]]; then
+if [[ -n "${GXX_ROOT}" && ${NVHPC_MAJOR} -ge 22 ]]; then
   CMAKE_EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=--gcc-toolchain=${GXX_ROOT}")
 fi
 if [[ -n "${GXX_LIB_DIR}" ]]; then
@@ -313,6 +308,8 @@ echo "gxx_bin=${GXX_BIN:-missing}"
 echo "gxx_lib_dir=${GXX_LIB_DIR:-missing}"
 echo "gxx_root=${GXX_ROOT:-missing}"
 echo "nvhpc_root_active=${NVHPC_ROOT_ACTIVE:-module}"
+echo "nvhpc_version=${NVHPC_VERSION_STR:-unknown}"
+echo "nvhpc_major=${NVHPC_MAJOR}"
 echo "cuda_home=${CUDA_HOME:-missing}"
 
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH || true
