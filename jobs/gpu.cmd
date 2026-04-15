@@ -49,11 +49,11 @@ METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics_parallel.csv"
 STATUS_DIR_REL="${OUTPUT_DIR_NAME}/status"
 
 OPENACC_GPU_ARCH="${OPENACC_GPU_ARCH:-ccall}"
+OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-}"
 OPENACC_REPORT="${OPENACC_REPORT:-0}"
-OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-10.1}"
 
 OPENACC_GPU_FLAGS="${OPENACC_GPU_ARCH}"
-if [[ "${OPENACC_GPU_FLAGS}" != *cuda* && -n "${OPENACC_CUDA_VERSION}" ]]; then
+if [[ -n "${OPENACC_CUDA_VERSION}" && "${OPENACC_GPU_FLAGS}" != *cuda* ]]; then
   OPENACC_GPU_FLAGS="${OPENACC_GPU_FLAGS},cuda${OPENACC_CUDA_VERSION}"
 fi
 
@@ -110,7 +110,7 @@ if [[ "${QUEUE_NAME}" != "gpuq" ]]; then
   exit 1
 fi
 
-ALLOC_NCPUS="${PBS_NCPUS:-${NCPUS:-8}}"
+ALLOC_NCPUS="${PBS_NCPUS:-${NCPUS:-1}}"
 if [[ ! "${ALLOC_NCPUS}" =~ ^[0-9]+$ ]] || ((ALLOC_NCPUS <= 0)); then
   echo "Invalid allocated CPU count: ${ALLOC_NCPUS}"
   exit 1
@@ -216,7 +216,6 @@ safe_source() {
   local file="$1"
   if [[ -f "${file}" ]]; then
     set +u
-    # shellcheck disable=SC1090
     source "${file}" || true
     set -u
   fi
@@ -242,7 +241,6 @@ module purge >/dev/null 2>&1 || true
 require_module cmake3.26
 require_module gcc10.1.0
 require_module nvhpc-21.11
-require_module cuda10.1
 require_module openmpi415
 
 CMAKE_BIN=""
@@ -274,16 +272,6 @@ if command -v mpicc >/dev/null 2>&1; then
   MPI_C_BIN="$(command -v mpicc)"
 fi
 
-CUDA_HOME=""
-if command -v nvcc >/dev/null 2>&1; then
-  CUDA_HOME="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd 2>/dev/null || true)"
-  if [[ -n "${CUDA_HOME}" ]]; then
-    export CUDA_HOME
-    export NVHPC_CUDA_HOME="${CUDA_HOME}"
-    export NVCOMPILER_ACC_CUDA_HOME="${CUDA_HOME}"
-  fi
-fi
-
 GXX_BIN=""
 GXX_LIB_DIR=""
 GXX_ROOT=""
@@ -298,7 +286,6 @@ if command -v g++ >/dev/null 2>&1; then
   fi
 fi
 
-# Optional zstd resolution for NVHPC LLVM tools
 ZSTD_LIB=""
 ZSTD_LIB_DIR=""
 for zstd_candidate in \
@@ -323,16 +310,15 @@ NVHPC_VERSION_STR=""
 NVHPC_MAJOR=0
 if [[ -n "${CXX_BIN}" ]]; then
   NVHPC_VERSION_STR="$("${CXX_BIN}" --version 2>/dev/null | head -n 1 || true)"
-  if [[ "${NVHPC_VERSION_STR}" =~ ([0-9]+)\.([0-9]+) ]]; then
-    NVHPC_MAJOR="${BASH_REMATCH[1]}"
+  NVHPC_MAJOR="$(echo "${NVHPC_VERSION_STR}" | grep -Eo '[0-9]+\.[0-9]+' | head -n 1 | cut -d. -f1 || true)"
+  if [[ -z "${NVHPC_MAJOR}" ]]; then
+    NVHPC_MAJOR=0
   fi
 fi
 
 CMAKE_EXTRA_ARGS=()
 
-# For newer NVHPC, help it locate GCC toolchain.
-# For 21.11, do NOT inject -gcc-name=... because that caused your failure.
-if [[ -n "${GXX_ROOT}" && ${NVHPC_MAJOR} -ge 22 ]]; then
+if [[ -n "${GXX_ROOT}" && "${NVHPC_MAJOR}" =~ ^[0-9]+$ ]] && (( NVHPC_MAJOR >= 22 )); then
   CMAKE_EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=--gcc-toolchain=${GXX_ROOT}")
 fi
 
@@ -363,7 +349,6 @@ echo "gxx_lib_dir=${GXX_LIB_DIR:-missing}"
 echo "gxx_root=${GXX_ROOT:-missing}"
 echo "nvhpc_version=${NVHPC_VERSION_STR:-unknown}"
 echo "nvhpc_major=${NVHPC_MAJOR}"
-echo "cuda_home=${CUDA_HOME:-missing}"
 echo "zstd_lib=${ZSTD_LIB:-missing}"
 echo "zstd_lib_dir=${ZSTD_LIB_DIR:-missing}"
 
