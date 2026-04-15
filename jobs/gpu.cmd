@@ -257,17 +257,36 @@ if command -v mpirun >/dev/null 2>&1; then
   MPIRUN_BIN="$(command -v mpirun)"
 fi
 
+GXX_BIN=""
+GXX_LIB_DIR=""
+GXX_ROOT=""
 if command -v g++ >/dev/null 2>&1; then
+  GXX_BIN="$(command -v g++)"
   GXX_LIBSTDCPP="$(g++ -print-file-name=libstdc++.so.6 2>/dev/null || true)"
+  GXX_ROOT="$(cd "$(dirname "${GXX_BIN}")/.." && pwd 2>/dev/null || true)"
   if [[ -n "${GXX_LIBSTDCPP}" && "${GXX_LIBSTDCPP}" != "libstdc++.so.6" ]]; then
     GXX_LIB_DIR="$(dirname "${GXX_LIBSTDCPP}")"
     export LD_LIBRARY_PATH="${GXX_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+    export LIBRARY_PATH="${GXX_LIB_DIR}:${LIBRARY_PATH:-}"
+    export LDFLAGS="-L${GXX_LIB_DIR} ${LDFLAGS:-}"
   fi
+fi
+
+CMAKE_EXTRA_ARGS=()
+if [[ -n "${GXX_ROOT}" ]]; then
+  CMAKE_EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=--gcc-toolchain=${GXX_ROOT}")
+fi
+if [[ -n "${GXX_LIB_DIR}" ]]; then
+  CMAKE_EXTRA_ARGS+=("-DCMAKE_EXE_LINKER_FLAGS=-L${GXX_LIB_DIR}")
+  CMAKE_EXTRA_ARGS+=("-DCMAKE_SHARED_LINKER_FLAGS=-L${GXX_LIB_DIR}")
 fi
 
 echo "cmake_bin=${CMAKE_BIN:-missing}"
 echo "cxx_bin=${CXX_BIN:-missing}"
 echo "mpirun_bin=${MPIRUN_BIN:-missing}"
+echo "gxx_bin=${GXX_BIN:-missing}"
+echo "gxx_lib_dir=${GXX_LIB_DIR:-missing}"
+echo "gxx_root=${GXX_ROOT:-missing}"
 
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH || true
 
@@ -298,6 +317,7 @@ else
   "${CMAKE_BIN}" -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CXX_COMPILER="${CXX_BIN}" \
+    "${CMAKE_EXTRA_ARGS[@]}" \
     -DTORIRENDER_ENABLE_MPI=ON \
     -DTORIRENDER_ENABLE_OPENMP=OFF \
     -DTORIRENDER_ENABLE_OPENACC=ON \
