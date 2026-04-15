@@ -49,12 +49,12 @@ METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics_parallel.csv"
 STATUS_DIR_REL="${OUTPUT_DIR_NAME}/status"
 OPENACC_GPU_ARCH="${OPENACC_GPU_ARCH:-ccall}"
 OPENACC_REPORT="${OPENACC_REPORT:-0}"
-OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-12.4}"
+OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-10.1}"
 OPENACC_GPU_FLAGS="${OPENACC_GPU_ARCH}"
 if [[ "${OPENACC_GPU_FLAGS}" != *cuda* && -n "${OPENACC_CUDA_VERSION}" ]]; then
   OPENACC_GPU_FLAGS="${OPENACC_GPU_FLAGS},cuda${OPENACC_CUDA_VERSION}"
 fi
-LEGACY_NVHPC_ROOT="${LEGACY_NVHPC_ROOT:-/lfs/sware/hpc_sdk/Linux_x86_64/25.7}"
+LEGACY_NVHPC_ROOT="${LEGACY_NVHPC_ROOT:-/lfs/sware/hpc_sdk/Linux_x86_64/20.7}"
 
 build_divider() {
   local width="$1"
@@ -227,9 +227,9 @@ if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
   # Fixed module set (no fallback loops).
   module load cmake3.26 >/dev/null 2>&1 || true
-  module load gcc13.3.0 >/dev/null 2>&1 || true
-  module load nvhpc-25.7 >/dev/null 2>&1 || true
-  module load cuda12.4 >/dev/null 2>&1 || true
+  module load gcc10.1.0 >/dev/null 2>&1 || true
+  module load nvhpc-21.11 >/dev/null 2>&1 || true
+  module load cuda10.1 >/dev/null 2>&1 || true
   module load openmpi415 >/dev/null 2>&1 || true
 fi
 
@@ -261,6 +261,17 @@ fi
 CXX_BIN=""
 if command -v nvc++ >/dev/null 2>&1; then
   CXX_BIN="$(command -v nvc++)"
+fi
+
+# Debug helper for NVHPC LLVM runtime dependency on libzstd.so.1.
+ZSTD_LIB=""
+ZSTD_LIB_DIR=""
+if command -v find >/dev/null 2>&1; then
+  ZSTD_LIB="$(find /lfs/sware -name "libzstd.so.1" 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${ZSTD_LIB}" ]]; then
+    ZSTD_LIB_DIR="$(dirname "${ZSTD_LIB}")"
+    export LD_LIBRARY_PATH="${ZSTD_LIB_DIR}:${LD_LIBRARY_PATH:-}"
+  fi
 fi
 
 MPIRUN_BIN=""
@@ -356,6 +367,24 @@ echo "nvhpc_root_active=${NVHPC_ROOT_ACTIVE:-module}"
 echo "nvhpc_version=${NVHPC_VERSION_STR:-unknown}"
 echo "nvhpc_major=${NVHPC_MAJOR}"
 echo "cuda_home=${CUDA_HOME:-missing}"
+echo "zstd_lib=${ZSTD_LIB:-missing}"
+echo "zstd_lib_dir=${ZSTD_LIB_DIR:-missing}"
+
+LLC_BIN=""
+if [[ -n "${CXX_BIN}" ]]; then
+  NVC_COMPILER_DIR="$(cd "$(dirname "${CXX_BIN}")/.." && pwd 2>/dev/null || true)"
+  LLC_BIN="${NVC_COMPILER_DIR}/share/llvm/bin/llc"
+fi
+if [[ -x "${LLC_BIN}" ]]; then
+  echo "llc_bin=${LLC_BIN}"
+  echo "llc_missing_deps:"
+  LLC_MISSING="$(ldd "${LLC_BIN}" 2>/dev/null | grep "not found" || true)"
+  if [[ -n "${LLC_MISSING}" ]]; then
+    echo "${LLC_MISSING}"
+  else
+    echo "none"
+  fi
+fi
 
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH || true
 
@@ -378,7 +407,7 @@ if [[ -z "${CMAKE_BIN}" || -z "${CXX_BIN}" ]]; then
     fi
     if [[ -z "${CXX_BIN}" ]]; then
       echo "nvc++ not found in PATH."
-      echo "Load one NVHPC module before qsub, for example: module load nvhpc-25.7"
+      echo "Load one NVHPC module before qsub, for example: module load nvhpc-21.11"
     fi
   } >"${RENDER_STDERR_LOG_REL}"
 else
