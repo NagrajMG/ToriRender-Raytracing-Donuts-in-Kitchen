@@ -49,6 +49,11 @@ METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics_parallel.csv"
 STATUS_DIR_REL="${OUTPUT_DIR_NAME}/status"
 OPENACC_GPU_ARCH="${OPENACC_GPU_ARCH:-ccall}"
 OPENACC_REPORT="${OPENACC_REPORT:-0}"
+OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-10.1}"
+OPENACC_GPU_FLAGS="${OPENACC_GPU_ARCH}"
+if [[ "${OPENACC_GPU_FLAGS}" != *cuda* && -n "${OPENACC_CUDA_VERSION}" ]]; then
+  OPENACC_GPU_FLAGS="${OPENACC_GPU_FLAGS},cuda${OPENACC_CUDA_VERSION}"
+fi
 
 build_divider() {
   local width="$1"
@@ -182,7 +187,7 @@ echo "omp_threads=${OMP_THREADS}"
 echo "ncpus=${ALLOC_NCPUS}"
 echo "ngpus=${ALLOC_NGPUS}"
 echo "walltime=${REQUESTED_WALLTIME}"
-echo "openacc_gpu_arch=${OPENACC_GPU_ARCH}"
+echo "openacc_gpu_arch=${OPENACC_GPU_FLAGS}"
 echo "openacc_report=${OPENACC_REPORT_CMAKE}"
 echo "pbs_log=${PBS_LOG_REL}"
 
@@ -230,13 +235,24 @@ if command -v module >/dev/null 2>&1; then
   for nvhpc_mod in nvhpc-23.5 nvhpc-21.11 nvhpc-21.7 nvhpc-25.7; do
     module load "${nvhpc_mod}" >/dev/null 2>&1 && break
   done
-  for cuda_mod in cuda12.4 cuda12.2 cuda12.1 cuda11.7; do
+  # Prefer CUDA 10.1 first for legacy driver nodes on AQuA.
+  for cuda_mod in cuda10.1 cuda10.0 cuda11.7 cuda12.1 cuda12.2 cuda12.4; do
     module load "${cuda_mod}" >/dev/null 2>&1 && break
   done
   if ! command -v mpirun >/dev/null 2>&1; then
     for mpi_mod in openmpi415 openmpi411 openmpi405 openmpi404 openmpi406 openmpi316 openmpi506 openmpi501; do
       module load "${mpi_mod}" >/dev/null 2>&1 && break
     done
+  fi
+fi
+
+CUDA_HOME=""
+if command -v nvcc >/dev/null 2>&1; then
+  CUDA_HOME="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd 2>/dev/null || true)"
+  if [[ -n "${CUDA_HOME}" ]]; then
+    export CUDA_HOME
+    export NVHPC_CUDA_HOME="${CUDA_HOME}"
+    export NVCOMPILER_ACC_CUDA_HOME="${CUDA_HOME}"
   fi
 fi
 
@@ -287,6 +303,7 @@ echo "mpirun_bin=${MPIRUN_BIN:-missing}"
 echo "gxx_bin=${GXX_BIN:-missing}"
 echo "gxx_lib_dir=${GXX_LIB_DIR:-missing}"
 echo "gxx_root=${GXX_ROOT:-missing}"
+echo "cuda_home=${CUDA_HOME:-missing}"
 
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH || true
 
@@ -321,7 +338,7 @@ else
     -DTORIRENDER_ENABLE_MPI=ON \
     -DTORIRENDER_ENABLE_OPENMP=OFF \
     -DTORIRENDER_ENABLE_OPENACC=ON \
-    -DTORIRENDER_OPENACC_GPU_ARCH="${OPENACC_GPU_ARCH}" \
+    -DTORIRENDER_OPENACC_GPU_ARCH="${OPENACC_GPU_FLAGS}" \
     -DTORIRENDER_OPENACC_REPORT="${OPENACC_REPORT_CMAKE}" \
     -DTORIRENDER_BUILD_TESTS=OFF \
     -DTORIRENDER_FETCH_CATCH2=OFF \
@@ -476,7 +493,7 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
   printf "  %-26s %s\n" "MPI Ranks:" "${MPI_RANKS}"
   printf "  %-26s %s\n" "OMP Threads:" "${OMP_THREADS}"
   printf "  %-26s %s\n" "Heartbeat Seconds:" "${HEARTBEAT_SECONDS}"
-  printf "  %-26s %s\n" "OpenACC GPU Arch:" "${OPENACC_GPU_ARCH}"
+  printf "  %-26s %s\n" "OpenACC GPU Arch:" "${OPENACC_GPU_FLAGS}"
   printf "  %-26s %s\n" "OpenACC Report:" "${OPENACC_REPORT_CMAKE}"
   echo
   echo "[Inputs and Outputs]"
