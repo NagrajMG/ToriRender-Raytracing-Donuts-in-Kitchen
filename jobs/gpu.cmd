@@ -49,12 +49,12 @@ METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics_parallel.csv"
 STATUS_DIR_REL="${OUTPUT_DIR_NAME}/status"
 OPENACC_GPU_ARCH="${OPENACC_GPU_ARCH:-ccall}"
 OPENACC_REPORT="${OPENACC_REPORT:-0}"
-OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-10.1}"
+OPENACC_CUDA_VERSION="${OPENACC_CUDA_VERSION:-12.4}"
 OPENACC_GPU_FLAGS="${OPENACC_GPU_ARCH}"
 if [[ "${OPENACC_GPU_FLAGS}" != *cuda* && -n "${OPENACC_CUDA_VERSION}" ]]; then
   OPENACC_GPU_FLAGS="${OPENACC_GPU_FLAGS},cuda${OPENACC_CUDA_VERSION}"
 fi
-LEGACY_NVHPC_ROOT="${LEGACY_NVHPC_ROOT:-/lfs/sware/hpc_sdk/Linux_x86_64/20.7}"
+LEGACY_NVHPC_ROOT="${LEGACY_NVHPC_ROOT:-/lfs/sware/hpc_sdk/Linux_x86_64/25.7}"
 
 build_divider() {
   local width="$1"
@@ -227,9 +227,9 @@ if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
   # Fixed module set (no fallback loops).
   module load cmake3.26 >/dev/null 2>&1 || true
-  module load gcc10.1.0 >/dev/null 2>&1 || true
-  module load nvhpc-23.5 >/dev/null 2>&1 || true
-  module load cuda10.1 >/dev/null 2>&1 || true
+  module load gcc13.3.0 >/dev/null 2>&1 || true
+  module load nvhpc-25.7 >/dev/null 2>&1 || true
+  module load cuda12.4 >/dev/null 2>&1 || true
   module load openmpi415 >/dev/null 2>&1 || true
 fi
 
