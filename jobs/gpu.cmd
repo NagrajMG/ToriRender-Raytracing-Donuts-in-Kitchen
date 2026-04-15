@@ -227,7 +227,7 @@ if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
   # Fixed module set (no fallback loops).
   module load cmake3.26 >/dev/null 2>&1 || true
-  module load gcc13.3.0 >/dev/null 2>&1 || true
+  module load gcc10.1.0 >/dev/null 2>&1 || true
   module load nvhpc-23.5 >/dev/null 2>&1 || true
   module load cuda10.1 >/dev/null 2>&1 || true
   module load openmpi415 >/dev/null 2>&1 || true
@@ -268,6 +268,33 @@ if command -v mpirun >/dev/null 2>&1; then
   MPIRUN_BIN="$(command -v mpirun)"
 fi
 
+MPI_CXX_BIN=""
+MPI_C_BIN=""
+if [[ -n "${NVHPC_ROOT_ACTIVE}" ]]; then
+  if [[ -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpic++" ]]; then
+    MPI_CXX_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpic++"
+  elif [[ -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicxx" ]]; then
+    MPI_CXX_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicxx"
+  fi
+  if [[ -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicc" ]]; then
+    MPI_C_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpicc"
+  fi
+  if [[ -z "${MPIRUN_BIN}" && -x "${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpirun" ]]; then
+    MPIRUN_BIN="${NVHPC_ROOT_ACTIVE}/comm_libs/mpi/bin/mpirun"
+  fi
+fi
+
+if [[ -z "${MPI_CXX_BIN}" ]]; then
+  if command -v mpic++ >/dev/null 2>&1; then
+    MPI_CXX_BIN="$(command -v mpic++)"
+  elif command -v mpicxx >/dev/null 2>&1; then
+    MPI_CXX_BIN="$(command -v mpicxx)"
+  fi
+fi
+if [[ -z "${MPI_C_BIN}" ]] && command -v mpicc >/dev/null 2>&1; then
+  MPI_C_BIN="$(command -v mpicc)"
+fi
+
 GXX_BIN=""
 GXX_LIB_DIR=""
 GXX_ROOT=""
@@ -290,20 +317,38 @@ if [[ -n "${CXX_BIN}" ]]; then
   if [[ "${NVHPC_VERSION_STR}" =~ ([0-9]+)\.([0-9]+) ]]; then
     NVHPC_MAJOR="${BASH_REMATCH[1]}"
   fi
+  if [[ ${NVHPC_MAJOR} -eq 0 && "${CXX_BIN}" == *"/20.7/"* ]]; then
+    NVHPC_MAJOR=20
+    NVHPC_VERSION_STR="NVHPC 20.7"
+  fi
 fi
 
 CMAKE_EXTRA_ARGS=()
 if [[ -n "${GXX_ROOT}" && ${NVHPC_MAJOR} -ge 22 ]]; then
   CMAKE_EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=--gcc-toolchain=${GXX_ROOT}")
+elif [[ -n "${GXX_BIN}" && ${NVHPC_MAJOR} -gt 0 && ${NVHPC_MAJOR} -lt 22 ]]; then
+  # NVHPC 20.x does not support --gcc-toolchain; use gcc-name instead.
+  CMAKE_EXTRA_ARGS+=("-DCMAKE_CXX_FLAGS=-gcc-name=${GXX_BIN}")
 fi
 if [[ -n "${GXX_LIB_DIR}" ]]; then
   CMAKE_EXTRA_ARGS+=("-DCMAKE_EXE_LINKER_FLAGS=-L${GXX_LIB_DIR}")
   CMAKE_EXTRA_ARGS+=("-DCMAKE_SHARED_LINKER_FLAGS=-L${GXX_LIB_DIR}")
 fi
+if [[ -n "${MPI_CXX_BIN}" ]]; then
+  CMAKE_EXTRA_ARGS+=("-DMPI_CXX_COMPILER=${MPI_CXX_BIN}")
+fi
+if [[ -n "${MPI_C_BIN}" ]]; then
+  CMAKE_EXTRA_ARGS+=("-DMPI_C_COMPILER=${MPI_C_BIN}")
+fi
+if [[ -n "${MPIRUN_BIN}" ]]; then
+  CMAKE_EXTRA_ARGS+=("-DMPIEXEC_EXECUTABLE=${MPIRUN_BIN}")
+fi
 
 echo "cmake_bin=${CMAKE_BIN:-missing}"
 echo "cxx_bin=${CXX_BIN:-missing}"
 echo "mpirun_bin=${MPIRUN_BIN:-missing}"
+echo "mpi_cxx_bin=${MPI_CXX_BIN:-missing}"
+echo "mpi_c_bin=${MPI_C_BIN:-missing}"
 echo "gxx_bin=${GXX_BIN:-missing}"
 echo "gxx_lib_dir=${GXX_LIB_DIR:-missing}"
 echo "gxx_root=${GXX_ROOT:-missing}"
