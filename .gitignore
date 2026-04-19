@@ -129,5 +129,6 @@ torirender_gpu.o*
 torirender_gpu.e*
 torirender_gpu.*.log
 
-run_reports
 status
+scripts/local_gpu_shell.sh
+final/resource_metrics.csv

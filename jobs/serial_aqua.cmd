@@ -11,9 +11,9 @@
 
 # Functionality:
 # - for submission: qsub jobs/serial_aqua.cmd
-# - Get final image in: output/images/
-# - Get timing row in: output/render_metrics.csv
-# - Get full run report in: output/run_reports/
+# - Get final image in: final/images/
+# - Get timing row in: final/serial_metrics.csv
+# - Get full run report in: final/run_reports/
 # - Get logs in: logs/
 
 #PBS -N torirender_serial
@@ -44,7 +44,8 @@ SCRATCH_REPO="${SCRATCH_JOB_DIR}/repo"
 
 LOG_DIR_WORK="${WORKDIR}/logs"
 RESULTS_DIR_WORK="${WORKDIR}/results"
-OUTPUT_DIR_WORK="${WORKDIR}/output"
+OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-final}"
+OUTPUT_DIR_WORK="${WORKDIR}/${OUTPUT_DIR_NAME}"
 mkdir -p "${LOG_DIR_WORK}" "${RESULTS_DIR_WORK}" "${OUTPUT_DIR_WORK}"
 
 RUN_DATE="$(date +%Y-%m-%d)"
@@ -57,12 +58,11 @@ PBS_LOG_REL="logs/${RUN_ID}.pbs.log"
 RENDER_STDOUT_LOG_REL="logs/${RUN_ID}.stdout.log"
 RENDER_STDERR_LOG_REL="logs/${RUN_ID}.stderr.log"
 RUN_SUMMARY_LOG_REL="results/aqua_serial_runs.log"
-RUN_REPORT_DIR_REL="output/run_reports"
+RUN_REPORT_DIR_REL="${OUTPUT_DIR_NAME}/run_reports"
 RUN_REPORT_FILE_REL="${RUN_REPORT_DIR_REL}/${RUN_ID}.txt"
 
-CONFIG_PATH="config/scene.json"
-OUTPUT_DIR_NAME="output"
-METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics.csv"
+CONFIG_PATH="${CONFIG_PATH:-config/scene.json}"
+METRICS_CSV_REL="${OUTPUT_DIR_NAME}/serial_metrics.csv"
 
 build_divider() {
   local width="$1"
@@ -117,7 +117,7 @@ else
 fi
 
 cd "${SCRATCH_REPO}"
-mkdir -p logs results output "${RUN_REPORT_DIR_REL}"
+mkdir -p logs results "${OUTPUT_DIR_NAME}" "${RUN_REPORT_DIR_REL}"
 
 safe_source() {
   local file="$1"
@@ -253,7 +253,7 @@ fi
 
 if [[ ${status} -eq 0 ]]; then
   set +e
-  "${CMAKE_BIN}" --build build --target render_scene -j1
+  "${CMAKE_BIN}" --build build --target torirender_cpu -j1
   status=$?
   set -e
 fi
@@ -262,7 +262,11 @@ if [[ ${status} -eq 0 ]]; then
   RENDER_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
   start_epoch="$(date +%s)"
   set +e
-  ./build/render_scene "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
+  ./build/torirender_cpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
+    --mode serial \
+    --mpi-ranks 1 \
+    --omp-threads 1 \
+    >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
   status=$?
   set -e
   end_epoch="$(date +%s)"
@@ -369,11 +373,11 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
 if command -v rsync >/dev/null 2>&1; then
   rsync -a "${SCRATCH_REPO}/logs/" "${LOG_DIR_WORK}/"
   rsync -a "${SCRATCH_REPO}/results/" "${RESULTS_DIR_WORK}/"
-  rsync -a "${SCRATCH_REPO}/output/" "${OUTPUT_DIR_WORK}/"
+  rsync -a "${SCRATCH_REPO}/${OUTPUT_DIR_NAME}/" "${OUTPUT_DIR_WORK}/"
 else
   cp -a "${SCRATCH_REPO}/logs/." "${LOG_DIR_WORK}/"
   cp -a "${SCRATCH_REPO}/results/." "${RESULTS_DIR_WORK}/"
-  cp -a "${SCRATCH_REPO}/output/." "${OUTPUT_DIR_WORK}/"
+  cp -a "${SCRATCH_REPO}/${OUTPUT_DIR_NAME}/." "${OUTPUT_DIR_WORK}/"
 fi
 
 if [[ ${status} -ne 0 ]]; then

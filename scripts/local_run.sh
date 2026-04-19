@@ -13,7 +13,7 @@ SCRIPT_START_TIME="$(date '+%Y-%m-%d %H:%M:%S %Z')"
 #   $1 : config path
 #   $2 : output directory
 CONFIG_PATH="config/scene.json"
-OUTPUT_DIR="output"
+OUTPUT_DIR="final"
 if (($# > 2)); then
   echo "Usage: bash scripts/local_run.sh [config_path] [output_dir]"
   exit 1
@@ -76,7 +76,7 @@ OUTPUT_PATH="${OUTPUT_DIR}"
 if [[ "${OUTPUT_PATH}" != /* ]]; then
   OUTPUT_PATH="${REPO_ROOT}/${OUTPUT_DIR}"
 fi
-METRICS_CSV="${OUTPUT_PATH}/render_metrics_parallel.csv"
+METRICS_CSV="${OUTPUT_PATH}/serial_metrics.csv"
 RUN_REPORTS_DIR="${OUTPUT_PATH}/run_reports"
 RUN_REPORT="${RUN_REPORTS_DIR}/${RUN_ID}.txt"
 mkdir -p "${RUN_REPORTS_DIR}"

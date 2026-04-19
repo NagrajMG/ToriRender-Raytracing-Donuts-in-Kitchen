@@ -24,7 +24,7 @@ namespace {
 // Terminal args
 struct RenderArgs {
   std::string configPath = "config/scene.json";
-  std::string outputDir = "output";
+  std::string outputDir = "final";
 };
 
 struct ResolvedOutputPaths {
@@ -234,7 +234,7 @@ bool resolveOutputPaths(const RenderArgs& args,
   std::error_code ec;
   outPaths.outputDir = std::filesystem::path(args.outputDir);
   if (outPaths.outputDir.empty()) {
-    outPaths.outputDir = "output";
+    outPaths.outputDir = "final";
   }
 
   std::filesystem::create_directories(outPaths.outputDir, ec);
@@ -254,7 +254,7 @@ bool resolveOutputPaths(const RenderArgs& args,
 
   outPaths.imageFileName = serialOutputFilename(width, height, samplesPerPixel, maxDepth);
   outPaths.imagePath = outPaths.imagesDir / outPaths.imageFileName;
-  outPaths.metricsCsvPath = outPaths.outputDir / "render_metrics.csv";
+  outPaths.metricsCsvPath = outPaths.outputDir / "serial_metrics.csv";
   return true;
 }
 

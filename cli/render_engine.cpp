@@ -65,11 +65,11 @@ Pipeline:
 6) Rank 0 writes PNG, heartbeat status file, render metrics CSV row, and resource reports.
 
 Output contract:
-- `output/images/<backend>_<resolution>_ssp<_>_depth<_>_<timestamp>.png`
-- `output/status/<run_id>.status`
-- `output/render_metrics_parallel.csv`
-- `output/resource_metrics.csv` (per-rank append-only)
-- `output/run_reports/resource_report_<run_id>.txt`
+- `final/images/<backend>_<resolution>_ssp<_>_depth<_>_<timestamp>.png`
+- `final/status/<run_id>.status`
+- `final/serial_metrics.csv` or `final/parallel_metrics.csv` (mode-based)
+- `final/resource_metrics.csv` (per-rank append-only)
+- `final/run_reports/resource_report_<run_id>.txt`
 
 Operational guarantees:
 - Deterministic run ID and filename timestamps.
@@ -93,7 +93,7 @@ constexpr int kLongRunThresholdSeconds = 1200;
 
 struct CliOptions {
   std::string configPath = "config/scene.json";
-  std::string outputDir = "output";
+  std::string outputDir = "final";
   std::optional<std::string> modeOverride;
   std::optional<int> mpiRanksOverride;
   std::optional<int> ompThreadsOverride;
@@ -709,10 +709,11 @@ int runMain(int argc, char** argv) {
 #endif
 
   RenderPaths paths{};
-  paths.outputDir = std::filesystem::path(cli.outputDir.empty() ? "output" : cli.outputDir);
+  paths.outputDir = std::filesystem::path(cli.outputDir.empty() ? "final" : cli.outputDir);
   paths.imagesDir = paths.outputDir / "images";
   paths.statusDir = paths.outputDir / "status";
-  paths.metricsCsvPath = paths.outputDir / "render_metrics_parallel.csv";
+  paths.metricsCsvPath =
+      paths.outputDir / (mode == "serial" ? "serial_metrics.csv" : "parallel_metrics.csv");
 
   const std::string runId = std::string(kBackendTag) + '_' + mode + '_' + timestampToken;
   paths.runId = runId;

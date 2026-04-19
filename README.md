@@ -125,21 +125,23 @@ qsub jobs/gpu.cmd
 Override example:
 
 ```bash
-qsub -v MPI_RANKS=4,OPENACC_GPU_ARCH=ccall,OPENACC_REPORT=0,CONFIG_PATH=config/scene.json,OUTPUT_DIR_NAME=output jobs/gpu.cmd
+qsub -v MPI_RANKS=4,OPENACC_GPU_ARCH=ccall,OPENACC_REPORT=0,CONFIG_PATH=config/scene.json,OUTPUT_DIR_NAME=final jobs/gpu.cmd
 ```
 
 Rule: set `MPI_RANKS == ngpus` (1 rank per GPU).
 
 ## 5. Output Structure
 
-Generated under your selected output directory (default `output/`):
+Generated under your selected output directory (default `final/`):
 
 - `images/`
   - `<backend>_<WxH>_ssp<S>_depth<D>_<YYYY-MM-DD>_time_<HHhMMmSSs>.png`
 - `status/`
   - `<run_id>.status`
-- `render_metrics_parallel.csv`
-  - run-level render summary
+- `serial_metrics.csv`
+  - run-level render summary (serial mode)
+- `parallel_metrics.csv`
+  - run-level render summary (parallel mode)
 - `resource_metrics.csv`
   - per-rank resource rows (MPI/GPU/CPU/timing/workload)
 - `run_reports/`
@@ -148,7 +150,7 @@ Generated under your selected output directory (default `output/`):
 
 ## 6. Metrics Reference
 
-### 6.1 `render_metrics_parallel.csv`
+### 6.1 `serial_metrics.csv` and `parallel_metrics.csv`
 
 Columns:
 - `run_id,timestamp,backend,mode,image_file,resolution,ssp,depth,mpi_ranks,omp_threads,gpus,time_seconds`
@@ -170,4 +172,4 @@ Columns:
 
 - `SceneConfig` is not a separate executable; it is loaded internally by runner binaries.
 - You only pass JSON path to `torirender_cpu` / `torirender_gpu` or PBS jobs.
-- Keep `logs/`, `results/`, and generated `output/` artifacts out of commits unless needed.
+- Keep `logs/`, `results/`, and generated `final/` artifacts out of commits unless needed.

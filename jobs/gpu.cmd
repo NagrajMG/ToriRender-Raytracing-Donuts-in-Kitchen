@@ -26,7 +26,8 @@ SCRATCH_REPO="${SCRATCH_JOB_DIR}/repo"
 
 LOG_DIR_WORK="${WORKDIR}/logs"
 RESULTS_DIR_WORK="${WORKDIR}/results"
-OUTPUT_DIR_WORK="${WORKDIR}/output"
+OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-final}"
+OUTPUT_DIR_WORK="${WORKDIR}/${OUTPUT_DIR_NAME}"
 mkdir -p "${LOG_DIR_WORK}" "${RESULTS_DIR_WORK}" "${OUTPUT_DIR_WORK}"
 
 RUN_DATE="$(date +%Y-%m-%d)"
@@ -39,13 +40,12 @@ PBS_LOG_REL="logs/${RUN_ID}.pbs.log"
 RENDER_STDOUT_LOG_REL="logs/${RUN_ID}.stdout.log"
 RENDER_STDERR_LOG_REL="logs/${RUN_ID}.stderr.log"
 RUN_SUMMARY_LOG_REL="results/gpu_aqua_runs.log"
-RUN_REPORT_DIR_REL="output/run_reports"
+RUN_REPORT_DIR_REL="${OUTPUT_DIR_NAME}/run_reports"
 RUN_REPORT_FILE_REL="${RUN_REPORT_DIR_REL}/${RUN_ID}.txt"
 MPI_HOSTFILE_REL="results/${RUN_ID}.hostfile"
 
 CONFIG_PATH="${CONFIG_PATH:-config/scene.json}"
-OUTPUT_DIR_NAME="${OUTPUT_DIR_NAME:-output}"
-METRICS_CSV_REL="${OUTPUT_DIR_NAME}/render_metrics_parallel.csv"
+METRICS_CSV_REL="${OUTPUT_DIR_NAME}/parallel_metrics.csv"
 STATUS_DIR_REL="${OUTPUT_DIR_NAME}/status"
 
 OPENACC_GPU_ARCH="${OPENACC_GPU_ARCH:-ccall}"
@@ -210,7 +210,7 @@ else
 fi
 
 cd "${SCRATCH_REPO}"
-mkdir -p logs results output "${RUN_REPORT_DIR_REL}"
+mkdir -p logs results "${OUTPUT_DIR_NAME}" "${RUN_REPORT_DIR_REL}"
 
 safe_source() {
   local file="$1"
@@ -595,11 +595,11 @@ REPORT_DIVIDER="$(build_divider "${REPORT_WIDTH}")"
 if command -v rsync >/dev/null 2>&1; then
   rsync -a "${SCRATCH_REPO}/logs/" "${LOG_DIR_WORK}/"
   rsync -a "${SCRATCH_REPO}/results/" "${RESULTS_DIR_WORK}/"
-  rsync -a "${SCRATCH_REPO}/output/" "${OUTPUT_DIR_WORK}/"
+  rsync -a "${SCRATCH_REPO}/${OUTPUT_DIR_NAME}/" "${OUTPUT_DIR_WORK}/"
 else
   cp -a "${SCRATCH_REPO}/logs/." "${LOG_DIR_WORK}/"
   cp -a "${SCRATCH_REPO}/results/." "${RESULTS_DIR_WORK}/"
-  cp -a "${SCRATCH_REPO}/output/." "${OUTPUT_DIR_WORK}/"
+  cp -a "${SCRATCH_REPO}/${OUTPUT_DIR_NAME}/." "${OUTPUT_DIR_WORK}/"
 fi
 
 if [[ ${status} -ne 0 ]]; then
