@@ -2,4 +2,3 @@ run_id,timestamp,backend,mode,image_file,resolution,ssp,depth,mpi_ranks,omp_thre
 cpu_serial_2026-04-19_time_16h52m28s,2026-04-19_time_16h52m28s,cpu,serial,cpu_640x360_ssp2_depth2_2026-04-19_time_16h52m28s.png,640x360,2,2,1,1,0,1.713594
 cpu_serial_2026-04-19_time_16h21m22s,2026-04-19_time_16h21m22s,cpu,serial,cpu_640x360_ssp16_depth2_2026-04-19_time_16h21m22s.png,640x360,16,2,1,1,0,62.576794
 cpu_serial_2026-04-19_time_18h08m10s,2026-04-19_time_18h08m10s,cpu,serial,cpu_1280x720_ssp128_depth10_2026-04-19_time_18h08m10s.png,1280x720,128,10,1,1,0,2439.215744
-cpu_serial_2026-04-20_time_23h58m31s,2026-04-20_time_23h58m31s,cpu,serial,cpu_1280x720_ssp512_depth10_2026-04-20_time_23h58m31s.png,1280x720,512,10,1,1,0,9771.525130
