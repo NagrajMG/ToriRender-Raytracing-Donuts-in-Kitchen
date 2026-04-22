@@ -106,7 +106,43 @@ if [[ "${MODE}" != "serial" && "${MODE}" != "parallel" ]]; then
 fi
 
 QUEUE_NAME="${PBS_QUEUE:-${PBS_O_QUEUE:-medium}}"
-ALLOC_NCPUS="${PBS_NCPUS:-${NCPUS:-1}}"
+
+read_positive_int() {
+  local raw="${1:-}"
+  if [[ "${raw}" =~ ^[0-9]+$ ]] && ((raw > 0)); then
+    echo "${raw}"
+    return
+  fi
+  echo "0"
+}
+
+ENV_PBS_NCPUS="$(read_positive_int "${PBS_NCPUS:-}")"
+ENV_PBS_NP="$(read_positive_int "${PBS_NP:-}")"
+ENV_NCPUS="$(read_positive_int "${NCPUS:-}")"
+
+NODEFILE_SLOTS=0
+if [[ -n "${PBS_NODEFILE:-}" && -f "${PBS_NODEFILE}" ]]; then
+  NODEFILE_SLOTS="$(awk 'NF {count++} END {print count+0}' "${PBS_NODEFILE}")"
+fi
+if [[ ! "${NODEFILE_SLOTS}" =~ ^[0-9]+$ ]]; then
+  NODEFILE_SLOTS=0
+fi
+
+# Prefer the largest positive signal to approximate total allocated CPU slots.
+ALLOC_NCPUS="${ENV_PBS_NCPUS}"
+if ((ENV_PBS_NP > ALLOC_NCPUS)); then
+  ALLOC_NCPUS="${ENV_PBS_NP}"
+fi
+if ((ENV_NCPUS > ALLOC_NCPUS)); then
+  ALLOC_NCPUS="${ENV_NCPUS}"
+fi
+if ((NODEFILE_SLOTS > ALLOC_NCPUS)); then
+  ALLOC_NCPUS="${NODEFILE_SLOTS}"
+fi
+
+if ((ALLOC_NCPUS <= 0)); then
+  ALLOC_NCPUS=1
+fi
 if [[ ! "${ALLOC_NCPUS}" =~ ^[0-9]+$ ]] || ((ALLOC_NCPUS <= 0)); then
   echo "Invalid allocated CPU count: ${ALLOC_NCPUS}"
   exit 1
@@ -199,6 +235,7 @@ echo "mode=${MODE}"
 echo "mpi_ranks=${MPI_RANKS}"
 echo "omp_threads=${OMP_THREADS}"
 echo "ncpus=${ALLOC_NCPUS}"
+echo "cpu_detect_sources=PBS_NCPUS:${PBS_NCPUS:-unset},PBS_NP:${PBS_NP:-unset},NCPUS:${NCPUS:-unset},NODEFILE_SLOTS:${NODEFILE_SLOTS}"
 echo "required_ncpus=${REQUIRED_NCPUS:-none}"
 echo "enforce_ncpus=${ENFORCE_NCPUS}"
 echo "walltime=${REQUESTED_WALLTIME}"
