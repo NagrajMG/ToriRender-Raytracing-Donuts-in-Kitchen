@@ -1,0 +1,37 @@
+======================================================================
+                       ToriRender Resource Report
+======================================================================
+
+[Run Summary]
+Run ID: cpu_parallel_2026-04-22_time_13h29m11s
+Total Ranks: 4
+Hosts Used: 1
+Visible GPUs (sum across hosts): 0
+CPU Slots Reported (sum ncpus): 8
+Total Rays Processed: 6370099200
+
+[Load Balance]
+Min Rank Runtime (s): 39327.752878
+Max Rank Runtime (s): 39330.638693
+Avg Rank Runtime (s): 39328.480479
+Imbalance Metric ((max-min)/avg): 0.000073
+
+[GPU Utilization Estimate]
+Average kernel/total ratio: 0.445601
+Interpretation: closer to 1.0 means more time in GPU kernel execution.
+
+[Per-Rank Breakdown]
+rank,host,gpu,shared_gpu,ncpus,omp_threads,rank_start,rank_end,row_start,row_count,rays,kernel_launches,kernels_async,gpu_active_s,scene_s,kernel_s,transfer_s,mpi_s,output_s,total_s,cpu_user_s,cpu_sys_s,cpu_idle_s,peak_mem_kb
+0,cn033,-1,no,2,2,2026-04-22 13:29:11,2026-04-23 00:24:42,0,540,1592524800,0,no,0.000000,0.000030,109.998460,0.000000,39217.688398,2.871831,39330.638693,5149.802814,34198.124775,0.000000,441900
+1,cn033,-1,no,2,2,2026-04-22 13:29:11,2026-04-23 00:24:39,540,540,1592524800,0,no,0.000000,0.000034,6622.646240,0.000000,32705.101283,0.000000,39327.765465,16591.599734,28493.976444,0.000000,56064
+2,cn033,-1,no,2,2,2026-04-22 13:29:11,2026-04-23 00:24:39,1080,540,1592524800,0,no,0.000000,0.000032,24037.730784,0.000000,15290.004340,0.000000,39327.752878,47793.637486,13342.099020,0.000000,56064
+3,cn033,-1,no,2,2,2026-04-22 13:29:11,2026-04-23 00:24:39,1620,540,1592524800,0,no,0.000000,0.000030,39327.646017,0.000000,0.101104,0.000000,39327.764883,75351.816374,0.065422,0.000000,56084
+
+[Warnings]
+None
+
+[Efficiency Hints]
+1. If ranks share a GPU, reduce ranks per node or enforce 1 rank per GPU.
+2. If imbalance is high, adjust tile or row partitioning.
+3. If transfer time is high, batch host-device movement.
+4. If MPI time is high, reduce synchronization and gather overhead.
