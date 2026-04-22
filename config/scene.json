@@ -6,8 +6,8 @@
 
     "vfov": 45.0,
 
-    "image_width": 1600,
-    "image_height": 900, 
+    "image_width": 3840,
+    "image_height": 2160, 
   
     "max_depth": 12, 
 
