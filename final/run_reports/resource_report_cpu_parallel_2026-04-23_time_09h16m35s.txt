@@ -1,0 +1,41 @@
+======================================================================
+                       ToriRender Resource Report
+======================================================================
+
+[Run Summary]
+Run ID: cpu_parallel_2026-04-23_time_09h16m35s
+Total Ranks: 8
+Hosts Used: 1
+Visible GPUs (sum across hosts): 0
+CPU Slots Reported (sum ncpus): 40
+Total Rays Processed: 6370099200
+
+[Load Balance]
+Min Rank Runtime (s): 10034.539074
+Max Rank Runtime (s): 10036.832649
+Avg Rank Runtime (s): 10034.836268
+Imbalance Metric ((max-min)/avg): 0.000229
+
+[GPU Utilization Estimate]
+Average kernel/total ratio: 0.295867
+Interpretation: closer to 1.0 means more time in GPU kernel execution.
+
+[Per-Rank Breakdown]
+rank,host,gpu,shared_gpu,ncpus,omp_threads,rank_start,rank_end,row_start,row_count,rays,kernel_launches,kernels_async,gpu_active_s,scene_s,kernel_s,transfer_s,mpi_s,output_s,total_s,cpu_user_s,cpu_sys_s,cpu_idle_s,peak_mem_kb
+0,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:51,0,270,796262400,0,no,0.000000,0.000018,19.855361,0.000000,10014.637164,2.274795,10036.832649,1242.722665,8841.778831,0.000000,418820
+1,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:49,270,270,796262400,0,no,0.000000,0.000021,19.997565,0.000000,10014.551976,0.000000,10034.557135,1220.265863,8862.480948,0.000000,31704
+2,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:49,540,270,796262400,0,no,0.000000,0.000017,561.152007,0.000000,9473.391352,0.000000,10034.550963,3392.231795,8381.170945,0.000000,31716
+3,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:49,810,270,796262400,0,no,0.000000,0.000018,1633.683365,0.000000,8400.866021,0.000000,10034.557108,8364.044353,7362.237913,0.000000,31720
+4,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:49,1080,270,796262400,0,no,0.000000,0.000019,3291.113781,0.000000,6743.417482,0.000000,10034.539074,15516.868166,5967.166871,0.000000,31884
+5,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:49,1350,270,796262400,0,no,0.000000,0.000020,4753.595387,0.000000,5280.941883,0.000000,10034.545172,22334.484991,4660.539215,0.000000,31724
+6,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:49,1620,270,796262400,0,no,0.000000,0.000017,10034.126255,0.000000,0.416590,0.000000,10034.550951,44253.054167,0.045287,0.000000,31716
+7,cn072,-1,no,5,5,2026-04-23 09:16:35,2026-04-23 12:03:49,1890,270,796262400,0,no,0.000000,0.000019,3437.586613,0.000000,6596.962532,0.000000,10034.557094,15672.922923,5835.457509,0.000000,31884
+
+[Warnings]
+- CPU bottleneck suspected (high CPU busy time with low kernel share).
+
+[Efficiency Hints]
+1. If ranks share a GPU, reduce ranks per node or enforce 1 rank per GPU.
+2. If imbalance is high, adjust tile or row partitioning.
+3. If transfer time is high, batch host-device movement.
+4. If MPI time is high, reduce synchronization and gather overhead.

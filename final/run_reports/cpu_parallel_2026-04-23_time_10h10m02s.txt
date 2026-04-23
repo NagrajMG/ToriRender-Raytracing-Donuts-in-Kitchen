@@ -1,0 +1,42 @@
+================================================================================================================================================================
+                                                                     ToriRender Run Report                                                                      
+================================================================================================================================================================
+
+[Run Information]
+  Run ID:                    cpu_parallel_2026-04-23_time_10h10m02s
+  Type:                      aqua
+  Backend:                   cpu
+  Mode:                      parallel
+  Job ID:                    1735620.hn1
+  Status:                    SUCCESS
+
+[Timing]
+  Script Start (Machine):    2026-04-23 10:10:02 IST
+  Script End (Machine):      2026-04-23 14:21:29 IST
+  Script Duration:           15087s
+  Render Start (Machine):    2026-04-23 10:10:56 IST
+  Render End (Machine):      2026-04-23 14:21:29 IST
+  Render Duration:           15033s
+
+[Runtime Configuration]
+  Queue:                     smallq40
+  Allocated CPUs:            32
+  Walltime:                  48:00:00
+  MPI Ranks:                 8
+  OMP Threads:               4
+  Heartbeat Seconds:         60
+
+[Inputs and Outputs]
+  Config Path:               config/scene.json
+  Output Directory:          final
+  Status Directory:          final/status
+  Metrics CSV:               final/parallel_metrics.csv
+  CSV Row Appended:          YES
+  Latest Metrics Row:        cpu_parallel_2026-04-23_time_10h10m58s,2026-04-23_time_10h10m58s,cpu,parallel,cpu_3840x2160_ssp768_depth12_2026-04-23_time_10h10m58s.png,3840x2160,768,12,8,4,0,15027.307850
+
+[Logs]
+  PBS Log:                   logs/cpu_parallel_2026-04-23_time_10h10m02s.pbs.log
+  Render STDOUT:             logs/cpu_parallel_2026-04-23_time_10h10m02s.stdout.log
+  Render STDERR:             logs/cpu_parallel_2026-04-23_time_10h10m02s.stderr.log
+
+================================================================================================================================================================
