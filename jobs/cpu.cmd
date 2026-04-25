@@ -240,7 +240,7 @@ if [[ "${PROFILE_PER_RANK}" != "0" && "${PROFILE_PER_RANK}" != "1" ]]; then
   exit 1
 fi
 
-PERF_CSV_PATH="${PERF_CSV_PATH:-results/perf/metrics.csv}"
+PERF_CSV_PATH="${PERF_CSV_PATH:-final/perf/metrics.csv}"
 RUN_LABEL="${RUN_LABEL:-}"
 
 PROFILE_ARGS=()

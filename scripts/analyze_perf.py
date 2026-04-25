@@ -767,12 +767,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze ToriRender profiling metrics.")
     parser.add_argument(
         "--input",
-        default="results/perf/metrics.csv",
-        help="Input CSV path or directory (default: results/perf/metrics.csv).",
+        default="final/perf/metrics.csv",
+        help="Input CSV path or directory (default: final/perf/metrics.csv).",
     )
     parser.add_argument(
         "--outdir",
-        default="results/perf",
+        default="final/perf",
         help="Output directory for analysis CSV, summary, and plots.",
     )
     args = parser.parse_args()

@@ -109,7 +109,7 @@ struct CliOptions {
   std::optional<int> heartbeatOverride;
   bool profileEnabled = false;
   bool profilePerRank = false;
-  std::string perfCsvPath = "results/perf/metrics.csv";
+  std::string perfCsvPath = "final/perf/metrics.csv";
   std::string runLabel;
 };
 
