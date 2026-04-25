@@ -27,7 +27,7 @@ fi
 
 PROFILE="${PROFILE:-0}"
 PROFILE_PER_RANK="${PROFILE_PER_RANK:-0}"
-PERF_CSV_PATH="${PERF_CSV_PATH:-results/perf/metrics.csv}"
+PERF_CSV_PATH="${PERF_CSV_PATH:-final/perf/metrics.csv}"
 RUN_LABEL="${RUN_LABEL:-}"
 
 if [[ "${PROFILE}" != "0" && "${PROFILE}" != "1" ]]; then

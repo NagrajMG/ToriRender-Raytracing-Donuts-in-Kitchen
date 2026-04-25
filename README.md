@@ -107,7 +107,7 @@ Profiling-enabled manual example:
 ```bash
 ./build/torirender_cpu config/scene.json final \
   --mode parallel --mpi-ranks 8 --omp-threads 5 \
-  --profile --perf-csv results/perf/metrics.csv --run-label cpu_8x5
+  --profile --perf-csv final/perf/metrics.csv --run-label cpu_8x5
 ```
 
 ## 4. AQuA Job Runs
@@ -127,7 +127,7 @@ qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=1,CONFIG_PATH=config/scene.json,OU
 Profiling override example:
 
 ```bash
-qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=5,PROFILE=1,PERF_CSV_PATH=results/perf/metrics.csv,RUN_LABEL=cpu_8x5 jobs/cpu.cmd
+qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=5,PROFILE=1,PERF_CSV_PATH=final/perf/metrics.csv,RUN_LABEL=cpu_8x5 jobs/cpu.cmd
 ```
 
 ### 4.2 GPU Job
@@ -145,7 +145,7 @@ qsub -v MPI_RANKS=4,OPENACC_GPU_ARCH=ccall,OPENACC_REPORT=0,CONFIG_PATH=config/s
 Profiling override example:
 
 ```bash
-qsub -v MPI_RANKS=4,PROFILE=1,PERF_CSV_PATH=results/perf/metrics.csv,RUN_LABEL=gpu_4x1 jobs/gpu.cmd
+qsub -v MPI_RANKS=4,PROFILE=1,PERF_CSV_PATH=final/perf/metrics.csv,RUN_LABEL=gpu_4x1 jobs/gpu.cmd
 ```
 
 Rule: set `MPI_RANKS == ngpus` (1 rank per GPU).
@@ -164,7 +164,7 @@ Generated under your selected output directory (default `final/`):
   - run-level render summary (parallel mode)
 - `resource_metrics.csv`
   - per-rank resource rows (MPI/GPU/CPU/timing/workload)
-- `results/perf/metrics.csv` (when `--profile` is used)
+- `final/perf/metrics.csv` (when `--profile` is used)
   - run-level lecture-model/performance decomposition row
 - `run_reports/`
   - `<run_id>.txt` (job/run report style)
@@ -182,7 +182,7 @@ Columns:
 Columns:
 - `run_id,rank,hostname,gpu_id,total_ranks,ncpus,ngpus,omp_threads,scene_time,kernel_time,transfer_time,mpi_time,output_time,total_time,rays_processed`
 
-### 6.3 `results/perf/metrics.csv`
+### 6.3 `final/perf/metrics.csv`
 
 Generated only when `--profile` is enabled and build option `TORIRENDER_ENABLE_PROFILING=ON`.
 
@@ -195,18 +195,18 @@ Key fields include:
 Analysis command:
 
 ```bash
-python scripts/analyze_perf.py --input results/perf/metrics.csv --outdir results/perf
+python scripts/analyze_perf.py --input final/perf/metrics.csv --outdir final/perf
 ```
 
 Outputs:
-- `results/perf/performance_analysis.csv`
-- `results/perf/performance_summary.md`
-- `results/perf/plots/time_decomposition_stacked_bar.png`
-- `results/perf/plots/overhead_breakdown_stacked_bar.png`
-- `results/perf/plots/speedup_vs_processors.png`
-- `results/perf/plots/efficiency_vs_processors.png`
-- `results/perf/plots/karp_flatt_vs_processors.png`
-- `results/perf/plots/total_time_vs_processors.png`
+- `final/perf/performance_analysis.csv`
+- `final/perf/performance_summary.md`
+- `final/perf/plots/time_decomposition_stacked_bar.png`
+- `final/perf/plots/overhead_breakdown_stacked_bar.png`
+- `final/perf/plots/speedup_vs_processors.png`
+- `final/perf/plots/efficiency_vs_processors.png`
+- `final/perf/plots/karp_flatt_vs_processors.png`
+- `final/perf/plots/total_time_vs_processors.png`
 
 ## 7. Quick Quality Presets
 
