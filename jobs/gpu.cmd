@@ -506,7 +506,7 @@ if [[ ${status} -eq 0 ]]; then
       --mpi-ranks "${MPI_RANKS}" \
       --omp-threads 1 \
       --heartbeat "${HEARTBEAT_SECONDS}" \
-      "${PROFILE_ARGS[@]}" \
+      "${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}" \
       >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
     status=$?
     set -e

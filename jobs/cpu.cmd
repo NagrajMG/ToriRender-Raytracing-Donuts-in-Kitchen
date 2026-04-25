@@ -442,12 +442,12 @@ if [[ ${status} -eq 0 ]]; then
         -np "${MPI_RANKS}" \
         --oversubscribe \
         --bind-to core --map-by slot:PE="${OMP_THREADS}" \
-        ./build/torirender_cpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
+      ./build/torirender_cpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
         --mode parallel \
         --mpi-ranks "${MPI_RANKS}" \
         --omp-threads "${OMP_THREADS}" \
         --heartbeat "${HEARTBEAT_SECONDS}" \
-        "${PROFILE_ARGS[@]}" \
+        "${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}" \
         >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
       status=$?
     fi
@@ -457,7 +457,7 @@ if [[ ${status} -eq 0 ]]; then
       --mpi-ranks 1 \
       --omp-threads 1 \
       --heartbeat "${HEARTBEAT_SECONDS}" \
-      "${PROFILE_ARGS[@]}" \
+      "${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}" \
       >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
     status=$?
   fi

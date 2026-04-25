@@ -134,7 +134,7 @@ set +e
   --mode serial \
   --mpi-ranks 1 \
   --omp-threads 1 \
-  "${PROFILE_ARGS[@]}" \
+  "${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}" \
   >"${STDOUT_LOG}" 2>"${STDERR_LOG}"
 status=$?
 set -e
