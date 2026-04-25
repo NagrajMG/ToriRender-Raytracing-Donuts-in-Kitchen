@@ -25,6 +25,31 @@ if (($# >= 2)); then
   OUTPUT_DIR="$2"
 fi
 
+PROFILE="${PROFILE:-0}"
+PROFILE_PER_RANK="${PROFILE_PER_RANK:-0}"
+PERF_CSV_PATH="${PERF_CSV_PATH:-results/perf/metrics.csv}"
+RUN_LABEL="${RUN_LABEL:-}"
+
+if [[ "${PROFILE}" != "0" && "${PROFILE}" != "1" ]]; then
+  echo "Invalid PROFILE=${PROFILE} (use 0 or 1)."
+  exit 1
+fi
+if [[ "${PROFILE_PER_RANK}" != "0" && "${PROFILE_PER_RANK}" != "1" ]]; then
+  echo "Invalid PROFILE_PER_RANK=${PROFILE_PER_RANK} (use 0 or 1)."
+  exit 1
+fi
+
+PROFILE_ARGS=()
+if [[ "${PROFILE}" == "1" ]]; then
+  PROFILE_ARGS+=(--profile --perf-csv "${PERF_CSV_PATH}")
+  if [[ "${PROFILE_PER_RANK}" == "1" ]]; then
+    PROFILE_ARGS+=(--profile-per-rank)
+  fi
+  if [[ -n "${RUN_LABEL}" ]]; then
+    PROFILE_ARGS+=(--run-label "${RUN_LABEL}")
+  fi
+fi
+
 build_divider() {
   local width="$1"
   printf '%*s' "${width}" '' | tr ' ' '='
@@ -109,6 +134,7 @@ set +e
   --mode serial \
   --mpi-ranks 1 \
   --omp-threads 1 \
+  "${PROFILE_ARGS[@]}" \
   >"${STDOUT_LOG}" 2>"${STDERR_LOG}"
 status=$?
 set -e

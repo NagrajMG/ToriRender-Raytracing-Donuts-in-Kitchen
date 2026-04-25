@@ -133,3 +133,4 @@ status
 scripts/local_gpu_shell.sh
 final/resource_metrics.csv
 outputs
+build_noprofile

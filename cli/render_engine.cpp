@@ -2,6 +2,7 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -12,17 +13,21 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
+#include <numeric>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "core/Accel.hpp"
 #include "core/Camera.hpp"
 #include "core/Ray.hpp"
 #include "io/Image.hpp"
+#include "runtime/Profiling.hpp"
 #include "runtime/ResourceTracker.hpp"
 #include "scene/Scene.hpp"
 #include "scene/SceneConfig.hpp"
@@ -79,6 +84,10 @@ Operational guarantees:
 
 namespace {
 
+#if !defined(TORIRENDER_GIT_COMMIT)
+#define TORIRENDER_GIT_COMMIT "unknown"
+#endif
+
 #if defined(TORIRENDER_EXEC_GPU)
 constexpr bool kIsGpuBinary = true;
 constexpr const char* kBackendTag = "gpu";
@@ -98,6 +107,10 @@ struct CliOptions {
   std::optional<int> mpiRanksOverride;
   std::optional<int> ompThreadsOverride;
   std::optional<int> heartbeatOverride;
+  bool profileEnabled = false;
+  bool profilePerRank = false;
+  std::string perfCsvPath = "results/perf/metrics.csv";
+  std::string runLabel;
 };
 
 struct RenderPaths {
@@ -127,6 +140,48 @@ struct CpuUsageSample {
   double userSeconds = 0.0;
   double systemSeconds = 0.0;
   long long peakMemoryKb = 0;
+};
+
+struct TileTimingStats {
+  double sumSeconds = 0.0;
+  double maxSeconds = 0.0;
+  double minSeconds = std::numeric_limits<double>::infinity();
+  std::uint64_t count = 0;
+
+  void add(double seconds) {
+    if (seconds < 0.0) {
+      return;
+    }
+    sumSeconds += seconds;
+    maxSeconds = std::max(maxSeconds, seconds);
+    minSeconds = std::min(minSeconds, seconds);
+    ++count;
+  }
+
+  double safeMin() const {
+    return count == 0 ? 0.0 : minSeconds;
+  }
+};
+
+struct RankPerfPacked {
+  double rankComputeSeconds = 0.0;
+  double rankTotalSeconds = 0.0;
+  double rankRenderRegionSeconds = 0.0;
+  double tileComputeSumSeconds = 0.0;
+  double tileComputeMaxSeconds = 0.0;
+  double tileComputeMinSeconds = 0.0;
+  double ompParallelRegionSeconds = 0.0;
+  unsigned long long tileCount = 0ULL;
+  unsigned long long pixelCount = 0ULL;
+  unsigned long long sampleCount = 0ULL;
+};
+
+struct BaselineQuery {
+  std::string sceneFile;
+  int width = 0;
+  int height = 0;
+  int samplesPerPixel = 0;
+  int maxDepth = 0;
 };
 
 #if !defined(_WIN32)
@@ -218,7 +273,8 @@ std::string toLower(std::string value) {
 void printUsage(const char* binaryName) {
   std::cerr << "Usage: " << binaryName
             << " [config_path] [output_dir] [--mode serial|parallel] [--mpi-ranks N]"
-               " [--omp-threads N] [--heartbeat N]\n";
+               " [--omp-threads N] [--heartbeat N] [--profile]"
+               " [--profile-per-rank] [--perf-csv <path>] [--run-label <label>]\n";
 }
 
 // Parse integer option values safely without throwing to caller.
@@ -285,6 +341,34 @@ bool parseArgs(int argc, char** argv, CliOptions& out) {
         return false;
       }
       out.heartbeatOverride = value;
+      continue;
+    }
+
+    if (arg == "--profile") {
+      out.profileEnabled = true;
+      continue;
+    }
+
+    if (arg == "--profile-per-rank") {
+      out.profilePerRank = true;
+      continue;
+    }
+
+    if (arg == "--perf-csv") {
+      if (i + 1 >= argc) {
+        std::cerr << "Missing value for --perf-csv\n";
+        return false;
+      }
+      out.perfCsvPath = argv[++i];
+      continue;
+    }
+
+    if (arg == "--run-label") {
+      if (i + 1 >= argc) {
+        std::cerr << "Missing value for --run-label\n";
+        return false;
+      }
+      out.runLabel = argv[++i];
       continue;
     }
 
@@ -444,6 +528,151 @@ void writeHeartbeat(const std::filesystem::path& statusPath,
   }
 }
 
+std::string formatDouble(double value, int precision = 9) {
+  std::ostringstream out;
+  out << std::fixed << std::setprecision(precision) << value;
+  return out.str();
+}
+
+std::string normalizeScenePath(const std::string& rawPath) {
+  if (rawPath.empty()) {
+    return rawPath;
+  }
+
+  std::error_code ec;
+  const std::filesystem::path path(rawPath);
+  const auto normalized = std::filesystem::weakly_canonical(path, ec);
+  if (!ec) {
+    return normalized.string();
+  }
+
+  const auto lexical = path.lexically_normal();
+  return lexical.string();
+}
+
+std::vector<std::string> parseCsvLine(const std::string& line) {
+  std::vector<std::string> values;
+  std::string current;
+  bool inQuotes = false;
+
+  for (std::size_t i = 0; i < line.size(); ++i) {
+    const char ch = line[i];
+    if (ch == '"') {
+      if (inQuotes && i + 1 < line.size() && line[i + 1] == '"') {
+        current.push_back('"');
+        ++i;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (!inQuotes && ch == ',') {
+      values.push_back(current);
+      current.clear();
+      continue;
+    }
+    current.push_back(ch);
+  }
+  values.push_back(current);
+  return values;
+}
+
+bool parsePositiveDouble(const std::string& token, double& out) {
+  try {
+    const double parsed = std::stod(token);
+    if (!std::isfinite(parsed) || parsed <= 0.0) {
+      return false;
+    }
+    out = parsed;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+std::optional<double> findSerialBaselineSeconds(const std::filesystem::path& csvPath,
+                                                const BaselineQuery& query) {
+  std::ifstream input(csvPath);
+  if (!input) {
+    return std::nullopt;
+  }
+
+  std::string headerLine;
+  if (!std::getline(input, headerLine)) {
+    return std::nullopt;
+  }
+  const std::vector<std::string> headers = parseCsvLine(headerLine);
+  std::unordered_map<std::string, std::size_t> index;
+  for (std::size_t i = 0; i < headers.size(); ++i) {
+    index.emplace(headers[i], i);
+  }
+
+  const auto hasColumn = [&](const char* name) -> bool {
+    return index.find(name) != index.end();
+  };
+
+  if (!(hasColumn("mode") && hasColumn("scene_file") && hasColumn("image_width") &&
+        hasColumn("image_height") && hasColumn("samples_per_pixel") && hasColumn("max_depth") &&
+        hasColumn("total_wall_seconds"))) {
+    return std::nullopt;
+  }
+
+  const auto sceneNorm = normalizeScenePath(query.sceneFile);
+  std::optional<double> latest;
+
+  std::string line;
+  while (std::getline(input, line)) {
+    if (line.empty()) {
+      continue;
+    }
+    const std::vector<std::string> values = parseCsvLine(line);
+    if (values.size() < headers.size()) {
+      continue;
+    }
+
+    const auto valueAt = [&](const char* key) -> const std::string& {
+      return values[index.at(key)];
+    };
+
+    if (toLower(valueAt("mode")) != "serial") {
+      continue;
+    }
+
+    if (normalizeScenePath(valueAt("scene_file")) != sceneNorm) {
+      continue;
+    }
+
+    try {
+      const int width = std::stoi(valueAt("image_width"));
+      const int height = std::stoi(valueAt("image_height"));
+      const int spp = std::stoi(valueAt("samples_per_pixel"));
+      const int depth = std::stoi(valueAt("max_depth"));
+      if (width != query.width || height != query.height || spp != query.samplesPerPixel ||
+          depth != query.maxDepth) {
+        continue;
+      }
+    } catch (...) {
+      continue;
+    }
+
+    double totalSeconds = 0.0;
+    if (!parsePositiveDouble(valueAt("total_wall_seconds"), totalSeconds)) {
+      continue;
+    }
+    latest = totalSeconds;
+  }
+
+  return latest;
+}
+
+double safeDivide(double numerator, double denominator) {
+  if (std::fabs(denominator) <= 1e-12) {
+    return 0.0;
+  }
+  return numerator / denominator;
+}
+
 // Append one metrics row per finished run; create header lazily.
 bool appendMetricsCsv(const std::filesystem::path& csvPath,
                       const std::string& runId,
@@ -503,6 +732,42 @@ bool appendMetricsCsv(const std::filesystem::path& csvPath,
   return true;
 }
 
+void addField(std::vector<torirender::runtime::CsvField>& fields,
+              std::string name,
+              const std::string& value) {
+  fields.push_back(torirender::runtime::CsvField{std::move(name), value});
+}
+
+void addField(std::vector<torirender::runtime::CsvField>& fields, std::string name, int value) {
+  fields.push_back(torirender::runtime::CsvField{std::move(name), std::to_string(value)});
+}
+
+void addField(std::vector<torirender::runtime::CsvField>& fields,
+              std::string name,
+              std::uint64_t value) {
+  fields.push_back(torirender::runtime::CsvField{std::move(name), std::to_string(value)});
+}
+
+void addField(std::vector<torirender::runtime::CsvField>& fields, std::string name, double value) {
+  fields.push_back(torirender::runtime::CsvField{std::move(name), formatDouble(value)});
+}
+
+bool appendProfileCsvRow(const std::filesystem::path& csvPath,
+                         const std::vector<torirender::runtime::CsvField>& fields,
+                         std::string& errorMessage) {
+  const std::filesystem::path parent = csvPath.parent_path();
+  if (!parent.empty()) {
+    std::error_code ec;
+    std::filesystem::create_directories(parent, ec);
+    if (ec) {
+      errorMessage = "Failed to create profiling CSV directory: " + parent.string() + " (" +
+                     ec.message() + ")";
+      return false;
+    }
+  }
+  return torirender::runtime::append_csv_row(csvPath, fields, &errorMessage);
+}
+
 #if defined(TORIRENDER_USE_MPI)
 // Abort all ranks with a single user-facing message from rank 0.
 int mpiBail(const std::string& message, int exitCode = 1) {
@@ -517,18 +782,42 @@ int mpiBail(const std::string& message, int exitCode = 1) {
 #endif
 
 int runMain(int argc, char** argv) {
+  const auto runWallStart = std::chrono::steady_clock::now();
   CliOptions cli;
   if (!parseArgs(argc, argv, cli)) {
     printUsage(argv[0]);
     return 1;
   }
 
+  const bool profilingEnabled =
+#if defined(TORIRENDER_ENABLE_PROFILING)
+      cli.profileEnabled;
+#else
+      false;
+#endif
+
+#if !defined(TORIRENDER_ENABLE_PROFILING)
+  if (cli.profileEnabled) {
+    std::cerr << "Profiling requested, but this binary was built with TORIRENDER_ENABLE_PROFILING=OFF.\n";
+  }
+#endif
+
+  torirender::runtime::SectionProfiler sectionProfiler;
+
   torirender::SceneConfig config{};
   std::string errorMessage;
-  if (!torirender::loadSceneConfigFromJsonFile(cli.configPath, config, &errorMessage)) {
-    std::cerr << "Failed to load scene config from " << cli.configPath << ": " << errorMessage
-              << '\n';
-    return 1;
+  {
+    const auto parseStart = std::chrono::steady_clock::now();
+    if (!torirender::loadSceneConfigFromJsonFile(cli.configPath, config, &errorMessage)) {
+      std::cerr << "Failed to load scene config from " << cli.configPath << ": " << errorMessage
+                << '\n';
+      return 1;
+    }
+    const double sceneParseSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - parseStart).count();
+    if (profilingEnabled) {
+      sectionProfiler.add_seconds("scene_parse_seconds", sceneParseSeconds);
+    }
   }
 
   std::string mode = toLower(config.runtime.mode);
@@ -572,6 +861,7 @@ int runMain(int argc, char** argv) {
   }
 
   MpiContext mpi{};
+  const auto mpiInitStart = std::chrono::steady_clock::now();
 #if defined(TORIRENDER_USE_MPI)
   int alreadyInitialized = 0;
   MPI_Initialized(&alreadyInitialized);
@@ -590,6 +880,11 @@ int runMain(int argc, char** argv) {
   mpi.rank = 0;
   mpi.size = 1;
 #endif
+  const double mpiInitSeconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiInitStart).count();
+  if (profilingEnabled) {
+    sectionProfiler.add_seconds("mpi_init_seconds", mpiInitSeconds);
+  }
 
   const auto rankStartSteady = std::chrono::steady_clock::now();
   const std::string rankStartWall = wallClockNow();
@@ -606,6 +901,22 @@ int runMain(int argc, char** argv) {
   std::uint64_t localKernelLaunches = 0;
   bool localKernelsAsync = false;
   int assignedGpuId = -1;
+
+  double localMpiBroadcastSeconds = 0.0;
+  double localMpiScatterSeconds = 0.0;
+  double localMpiGatherSeconds = 0.0;
+  double localSynchronizationSeconds = 0.0;
+  double localSyncBeforeRenderSeconds = 0.0;
+  double localCameraSetupSeconds = 0.0;
+  double localBvhBuildSeconds = 0.0;
+  double localRenderRegionWallSeconds = 0.0;
+  double localOmpParallelRegionSeconds = 0.0;
+  double localFinalizationSeconds = 0.0;
+  TileTimingStats localTileStats{};
+  double localRankComputeSeconds = 0.0;
+  std::uint64_t localTileCount = 0;
+  std::uint64_t localPixelCount = 0;
+  std::uint64_t localSampleCount = 0;
 
   if (mode == "parallel" && !mpi.enabled) {
 #if defined(TORIRENDER_USE_MPI)
@@ -686,6 +997,7 @@ int runMain(int argc, char** argv) {
   const int height = std::max(config.camera.imageHeight, 1);
   const int samplesPerPixel = std::max(config.camera.samplesPerPixel, 1);
   const int maxDepth = std::max(config.camera.maxDepth, 0);
+  const int pEffective = std::max(1, mpi.size * desiredOmpThreads);
 
   std::string timestampToken;
   if (mpi.rank == 0) {
@@ -700,8 +1012,10 @@ int runMain(int argc, char** argv) {
     }
     const auto mpiCallStart = std::chrono::steady_clock::now();
     MPI_Bcast(buffer.data(), static_cast<int>(buffer.size()), MPI_CHAR, 0, MPI_COMM_WORLD);
-    localMpiTime +=
+    const double callSeconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
+    localMpiBroadcastSeconds += callSeconds;
+    localMpiTime += callSeconds;
     if (mpi.rank != 0) {
       timestampToken = buffer.data();
     }
@@ -756,134 +1070,214 @@ int runMain(int argc, char** argv) {
   {
     const auto mpiCallStart = std::chrono::steady_clock::now();
     MPI_Barrier(MPI_COMM_WORLD);
-    localMpiTime +=
+    const double barrierSeconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
+    localMpiTime += barrierSeconds;
+    localSynchronizationSeconds += barrierSeconds;
+    localSyncBeforeRenderSeconds += barrierSeconds;
   }
 #endif
 
   const auto sceneStart = std::chrono::steady_clock::now();
-  const torirender::Camera camera(config.camera.lookFrom,
-                                  config.camera.lookAt,
-                                  config.camera.viewUp,
-                                  config.camera.vfov,
-                                  static_cast<double>(width) / static_cast<double>(height),
-                                  width,
-                                  height);
-  const torirender::Scene scene(config);
-  localSceneTime =
-      std::chrono::duration<double>(std::chrono::steady_clock::now() - sceneStart).count();
+  {
+    const auto cameraStart = std::chrono::steady_clock::now();
+    const torirender::Camera camera(config.camera.lookFrom,
+                                    config.camera.lookAt,
+                                    config.camera.viewUp,
+                                    config.camera.vfov,
+                                    static_cast<double>(width) / static_cast<double>(height),
+                                    width,
+                                    height);
+    localCameraSetupSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - cameraStart).count();
 
-  const RowRange localRange = rowRangeForRank(mpi.rank, mpi.size, height);
-  const std::uint64_t localPrimaryRays = static_cast<std::uint64_t>(localRange.count) *
-                                         static_cast<std::uint64_t>(width) *
-                                         static_cast<std::uint64_t>(samplesPerPixel);
-  resourceTracker.log_work_distribution(
-      localRange.start, localRange.count, width, height, localPrimaryRays);
-
-  std::vector<torirender::Vec3> localColors(
-      static_cast<std::size_t>(localRange.count) * static_cast<std::size_t>(width),
-      torirender::Vec3{});
-
-  const std::uint64_t totalPixels =
-      static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
-  std::uint64_t localPixelsDone = 0;
-
-  const auto renderStart = std::chrono::steady_clock::now();
-  auto lastHeartbeat = renderStart;
-  int currentHeartbeatSeconds = heartbeatSeconds > 0 ? heartbeatSeconds : kDefaultHeartbeatSeconds;
-
-  const auto updateHeartbeat = [&]() {
-    const auto now = std::chrono::steady_clock::now();
-    const auto elapsed =
-        std::chrono::duration_cast<std::chrono::seconds>(now - renderStart).count();
-
-    if (!heartbeatOverridden && elapsed >= kLongRunThresholdSeconds) {
-      currentHeartbeatSeconds = kLongRunHeartbeatSeconds;
+    const auto bvhStart = std::chrono::steady_clock::now();
+    const torirender::Scene scene(config, profilingEnabled ? &localBvhBuildSeconds : nullptr);
+    const double sceneBuildWall =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - bvhStart).count();
+    if (!profilingEnabled || localBvhBuildSeconds <= 0.0) {
+      localBvhBuildSeconds = sceneBuildWall;
     }
 
-    const auto sinceLast =
-        std::chrono::duration_cast<std::chrono::seconds>(now - lastHeartbeat).count();
-    if (mpi.rank == 0 && sinceLast >= currentHeartbeatSeconds) {
-      const std::uint64_t estimatedDone =
-          mpi.size > 1
-              ? std::min(totalPixels, localPixelsDone * static_cast<std::uint64_t>(mpi.size))
-              : localPixelsDone;
-      writeHeartbeat(paths.statusPath,
-                     runId,
-                     kBackendTag,
-                     mode,
-                     mpi.size,
-                     desiredOmpThreads,
-                     kIsGpuBinary ? mpi.size : 0,
-                     estimatedDone,
-                     totalPixels,
-                     static_cast<double>(elapsed),
-                     currentHeartbeatSeconds);
-      lastHeartbeat = now;
-    }
-  };
+    localSceneTime =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - sceneStart).count();
 
-  const int tileRows = mode == "parallel" ? 32 : 4;
-  const auto kernelStart = std::chrono::steady_clock::now();
-  if (mode == "parallel") {
+    const auto distributionStart = std::chrono::steady_clock::now();
+    const RowRange localRange = rowRangeForRank(mpi.rank, mpi.size, height);
+    const std::uint64_t localPrimaryRays = static_cast<std::uint64_t>(localRange.count) *
+                                           static_cast<std::uint64_t>(width) *
+                                           static_cast<std::uint64_t>(samplesPerPixel);
+    localPixelCount = static_cast<std::uint64_t>(localRange.count) * static_cast<std::uint64_t>(width);
+    localSampleCount = localPixelCount * static_cast<std::uint64_t>(samplesPerPixel);
+    resourceTracker.log_work_distribution(
+        localRange.start, localRange.count, width, height, localPrimaryRays);
+
+    std::vector<torirender::Vec3> localColors(
+        static_cast<std::size_t>(localRange.count) * static_cast<std::size_t>(width),
+        torirender::Vec3{});
+    localMpiScatterSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - distributionStart).count();
+
+    const std::uint64_t totalPixels =
+        static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
+    std::uint64_t localPixelsDone = 0;
+
+    const auto renderStart = std::chrono::steady_clock::now();
+    auto lastHeartbeat = renderStart;
+    int currentHeartbeatSeconds =
+        heartbeatSeconds > 0 ? heartbeatSeconds : kDefaultHeartbeatSeconds;
+
+    const auto updateHeartbeat = [&]() {
+      const auto now = std::chrono::steady_clock::now();
+      const auto elapsed =
+          std::chrono::duration_cast<std::chrono::seconds>(now - renderStart).count();
+
+      if (!heartbeatOverridden && elapsed >= kLongRunThresholdSeconds) {
+        currentHeartbeatSeconds = kLongRunHeartbeatSeconds;
+      }
+
+      const auto sinceLast =
+          std::chrono::duration_cast<std::chrono::seconds>(now - lastHeartbeat).count();
+      if (mpi.rank == 0 && sinceLast >= currentHeartbeatSeconds) {
+        const std::uint64_t estimatedDone =
+            mpi.size > 1
+                ? std::min(totalPixels, localPixelsDone * static_cast<std::uint64_t>(mpi.size))
+                : localPixelsDone;
+        writeHeartbeat(paths.statusPath,
+                       runId,
+                       kBackendTag,
+                       mode,
+                       mpi.size,
+                       desiredOmpThreads,
+                       kIsGpuBinary ? mpi.size : 0,
+                       estimatedDone,
+                       totalPixels,
+                       static_cast<double>(elapsed),
+                       currentHeartbeatSeconds);
+        lastHeartbeat = now;
+      }
+    };
+
+    const int tileRows = mode == "parallel" ? 32 : 4;
+    const auto kernelStart = std::chrono::steady_clock::now();
+    if (mode == "parallel") {
 #if defined(TORIRENDER_USE_OPENACC)
-    if (kIsGpuBinary) {
-      torirender::Vec3* colorBuffer = localColors.data();
-      const std::size_t colorCount = localColors.size();
-      const int rowStart = localRange.start;
-      constexpr int kAccAsyncQueue = 1;
-      localKernelsAsync = true;
-      const auto gpuDataRegionStart = std::chrono::steady_clock::now();
+      if (kIsGpuBinary) {
+        torirender::Vec3* colorBuffer = localColors.data();
+        const std::size_t colorCount = localColors.size();
+        const int rowStart = localRange.start;
+        constexpr int kAccAsyncQueue = 1;
+        localKernelsAsync = true;
+        const auto gpuDataRegionStart = std::chrono::steady_clock::now();
 
 #pragma acc data copyin(camera, scene) copyout(colorBuffer[0 : colorCount])
-      {
-        for (int tileOffset = 0; tileOffset < localRange.count; tileOffset += tileRows) {
-          const int tileStart = tileOffset;
-          const int tileEnd = std::min(localRange.count, tileStart + tileRows);
-          const auto tileKernelStart = std::chrono::steady_clock::now();
+        {
+          for (int tileOffset = 0; tileOffset < localRange.count; tileOffset += tileRows) {
+            const int tileStart = tileOffset;
+            const int tileEnd = std::min(localRange.count, tileStart + tileRows);
+            const auto tileKernelStart = std::chrono::steady_clock::now();
 
 #pragma acc parallel loop gang vector collapse(2) independent async(kAccAsyncQueue) \
     present(colorBuffer[0 : colorCount], camera, scene)
-          for (int localY = tileStart; localY < tileEnd; ++localY) {
-            for (int x = 0; x < width; ++x) {
-              const int y = rowStart + localY;
-              const std::size_t localIndex =
-                  static_cast<std::size_t>(localY) * static_cast<std::size_t>(width) +
-                  static_cast<std::size_t>(x);
-              colorBuffer[localIndex] = renderPixelColor(
-                  camera, scene, x, y, width, samplesPerPixel, maxDepth, config.camera.rngSeed);
+            for (int localY = tileStart; localY < tileEnd; ++localY) {
+              for (int x = 0; x < width; ++x) {
+                const int y = rowStart + localY;
+                const std::size_t localIndex =
+                    static_cast<std::size_t>(localY) * static_cast<std::size_t>(width) +
+                    static_cast<std::size_t>(x);
+                colorBuffer[localIndex] = renderPixelColor(
+                    camera, scene, x, y, width, samplesPerPixel, maxDepth, config.camera.rngSeed);
+              }
+            }
+
+#pragma acc wait(kAccAsyncQueue)
+            const auto tileKernelEnd = std::chrono::steady_clock::now();
+            const double tileKernelSeconds =
+                std::chrono::duration<double>(tileKernelEnd - tileKernelStart).count();
+            localKernelTime += tileKernelSeconds;
+            localGpuActiveTime += tileKernelSeconds;
+            localTileStats.add(tileKernelSeconds);
+            ++localKernelLaunches;
+
+            localPixelsDone +=
+                static_cast<std::uint64_t>(tileEnd - tileStart) * static_cast<std::uint64_t>(width);
+            ++localTileCount;
+            updateHeartbeat();
+          }
+        }
+        const auto gpuDataRegionEnd = std::chrono::steady_clock::now();
+        const double dataRegionSeconds =
+            std::chrono::duration<double>(gpuDataRegionEnd - gpuDataRegionStart).count();
+        localTransferTime += std::max(0.0, dataRegionSeconds - localKernelTime);
+        localRankComputeSeconds = localTileStats.sumSeconds;
+      } else
+#endif
+      {
+#if defined(TORIRENDER_USE_OPENMP)
+        const auto ompRegionStart = std::chrono::steady_clock::now();
+        std::vector<double> threadUsefulSeconds;
+        if (profilingEnabled) {
+          threadUsefulSeconds.assign(static_cast<std::size_t>(omp_get_max_threads()), 0.0);
+        }
+        std::chrono::steady_clock::time_point tileWallStart{};
+#pragma omp parallel
+        {
+          for (int tileOffset = 0; tileOffset < localRange.count; tileOffset += tileRows) {
+            const int tileStart = localRange.start + tileOffset;
+            const int tileEnd = std::min(localRange.start + localRange.count, tileStart + tileRows);
+
+#pragma omp single
+            { tileWallStart = std::chrono::steady_clock::now(); }
+
+#pragma omp for schedule(static)
+            for (int y = tileStart; y < tileEnd; ++y) {
+              const auto rowStart =
+                  profilingEnabled ? std::chrono::steady_clock::now()
+                                   : std::chrono::steady_clock::time_point{};
+              for (int x = 0; x < width; ++x) {
+                const std::size_t localIndex =
+                    static_cast<std::size_t>(y - localRange.start) * static_cast<std::size_t>(width) +
+                    static_cast<std::size_t>(x);
+                localColors[localIndex] = renderPixelColor(
+                    camera, scene, x, y, width, samplesPerPixel, maxDepth, config.camera.rngSeed);
+              }
+              if (profilingEnabled) {
+                const int tid = omp_get_thread_num();
+                if (tid >= 0 && static_cast<std::size_t>(tid) < threadUsefulSeconds.size()) {
+                  threadUsefulSeconds[static_cast<std::size_t>(tid)] +=
+                      std::chrono::duration<double>(std::chrono::steady_clock::now() - rowStart)
+                          .count();
+                }
+              }
+            }
+
+#pragma omp single
+            {
+              const double tileWallSeconds =
+                  std::chrono::duration<double>(std::chrono::steady_clock::now() - tileWallStart)
+                      .count();
+              localTileStats.add(tileWallSeconds);
+              localPixelsDone +=
+                  static_cast<std::uint64_t>(tileEnd - tileStart) * static_cast<std::uint64_t>(width);
+              ++localTileCount;
+              updateHeartbeat();
             }
           }
-
-          // Keep heartbeat on host-side, but sync once per tile batch.
-#pragma acc wait(kAccAsyncQueue)
-          const auto tileKernelEnd = std::chrono::steady_clock::now();
-          const double tileKernelSeconds =
-              std::chrono::duration<double>(tileKernelEnd - tileKernelStart).count();
-          localKernelTime += tileKernelSeconds;
-          localGpuActiveTime += tileKernelSeconds;
-          ++localKernelLaunches;
-
-          localPixelsDone +=
-              static_cast<std::uint64_t>(tileEnd - tileStart) * static_cast<std::uint64_t>(width);
-          updateHeartbeat();
         }
-      }
-      const auto gpuDataRegionEnd = std::chrono::steady_clock::now();
-      const double dataRegionSeconds =
-          std::chrono::duration<double>(gpuDataRegionEnd - gpuDataRegionStart).count();
-      localTransferTime += std::max(0.0, dataRegionSeconds - localKernelTime);
-    } else
-#endif
-    {
-#if defined(TORIRENDER_USE_OPENMP)
-#pragma omp parallel
-      {
+        localOmpParallelRegionSeconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - ompRegionStart).count();
+        if (profilingEnabled && !threadUsefulSeconds.empty()) {
+          const double usefulSum = std::accumulate(
+              threadUsefulSeconds.begin(), threadUsefulSeconds.end(), 0.0);
+          localRankComputeSeconds =
+              safeDivide(usefulSum, static_cast<double>(std::max(desiredOmpThreads, 1)));
+        }
+#else
         for (int tileOffset = 0; tileOffset < localRange.count; tileOffset += tileRows) {
           const int tileStart = localRange.start + tileOffset;
           const int tileEnd = std::min(localRange.start + localRange.count, tileStart + tileRows);
+          const auto tileStartClock = std::chrono::steady_clock::now();
 
-#pragma omp for schedule(static)
           for (int y = tileStart; y < tileEnd; ++y) {
             for (int x = 0; x < width; ++x) {
               const std::size_t localIndex =
@@ -893,19 +1287,23 @@ int runMain(int argc, char** argv) {
                   camera, scene, x, y, width, samplesPerPixel, maxDepth, config.camera.rngSeed);
             }
           }
-
-#pragma omp single
-          {
-            localPixelsDone +=
-                static_cast<std::uint64_t>(tileEnd - tileStart) * static_cast<std::uint64_t>(width);
-            updateHeartbeat();
-          }
+          const double tileWallSeconds =
+              std::chrono::duration<double>(std::chrono::steady_clock::now() - tileStartClock)
+                  .count();
+          localTileStats.add(tileWallSeconds);
+          localPixelsDone +=
+              static_cast<std::uint64_t>(tileEnd - tileStart) * static_cast<std::uint64_t>(width);
+          ++localTileCount;
+          updateHeartbeat();
         }
+        localRankComputeSeconds = localTileStats.sumSeconds;
+#endif
       }
-#else
+    } else {
       for (int tileOffset = 0; tileOffset < localRange.count; tileOffset += tileRows) {
         const int tileStart = localRange.start + tileOffset;
         const int tileEnd = std::min(localRange.start + localRange.count, tileStart + tileRows);
+        const auto tileStartClock = std::chrono::steady_clock::now();
 
         for (int y = tileStart; y < tileEnd; ++y) {
           for (int x = 0; x < width; ++x) {
@@ -916,279 +1314,576 @@ int runMain(int argc, char** argv) {
                 camera, scene, x, y, width, samplesPerPixel, maxDepth, config.camera.rngSeed);
           }
         }
-
+        const double tileWallSeconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - tileStartClock)
+                .count();
+        localTileStats.add(tileWallSeconds);
         localPixelsDone +=
             static_cast<std::uint64_t>(tileEnd - tileStart) * static_cast<std::uint64_t>(width);
+        ++localTileCount;
         updateHeartbeat();
       }
-#endif
+      localRankComputeSeconds = localTileStats.sumSeconds;
     }
-  } else {
-    for (int tileOffset = 0; tileOffset < localRange.count; tileOffset += tileRows) {
-      const int tileStart = localRange.start + tileOffset;
-      const int tileEnd = std::min(localRange.start + localRange.count, tileStart + tileRows);
 
-      for (int y = tileStart; y < tileEnd; ++y) {
-        for (int x = 0; x < width; ++x) {
-          const std::size_t localIndex =
-              static_cast<std::size_t>(y - localRange.start) * static_cast<std::size_t>(width) +
-              static_cast<std::size_t>(x);
-          localColors[localIndex] = renderPixelColor(
-              camera, scene, x, y, width, samplesPerPixel, maxDepth, config.camera.rngSeed);
+    localRenderRegionWallSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - renderStart).count();
+
+    if (localTileStats.count == 0 && localRange.count > 0) {
+      localTileStats.add(localRenderRegionWallSeconds);
+      localTileCount = 1;
+    }
+    if (localRankComputeSeconds <= 0.0) {
+      localRankComputeSeconds =
+          localTileStats.sumSeconds > 0.0 ? localTileStats.sumSeconds : localRenderRegionWallSeconds;
+    }
+
+    if (!(kIsGpuBinary
+#if defined(TORIRENDER_USE_OPENACC)
+          && mode == "parallel"
+#endif
+          )) {
+      localKernelTime =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - kernelStart).count();
+    }
+
+    std::vector<torirender::Vec3> finalColors;
+
+#if defined(TORIRENDER_USE_MPI)
+    if (mpi.size > 1) {
+      const std::size_t localBytes = localColors.size() * sizeof(torirender::Vec3);
+      if (localBytes > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+        return mpiBail("Local MPI send buffer exceeds MPI int count limit.");
+      }
+      const int localCountBytes = static_cast<int>(localBytes);
+
+      std::vector<int> recvCounts;
+      std::vector<int> displacements;
+      if (mpi.rank == 0) {
+        recvCounts.resize(static_cast<std::size_t>(mpi.size), 0);
+        displacements.resize(static_cast<std::size_t>(mpi.size), 0);
+        finalColors.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height),
+                           torirender::Vec3{});
+      }
+
+      {
+        const auto mpiCallStart = std::chrono::steady_clock::now();
+        MPI_Gather(&localCountBytes,
+                   1,
+                   MPI_INT,
+                   mpi.rank == 0 ? recvCounts.data() : nullptr,
+                   1,
+                   MPI_INT,
+                   0,
+                   MPI_COMM_WORLD);
+        const double gatherSeconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
+        localMpiGatherSeconds += gatherSeconds;
+        localMpiTime += gatherSeconds;
+      }
+
+      if (mpi.rank == 0) {
+        std::size_t offsetBytes = 0;
+        for (int i = 0; i < mpi.size; ++i) {
+          if (offsetBytes > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            return mpiBail("MPI displacement exceeds MPI int count limit.");
+          }
+          displacements[static_cast<std::size_t>(i)] = static_cast<int>(offsetBytes);
+          offsetBytes += static_cast<std::size_t>(recvCounts[static_cast<std::size_t>(i)]);
+        }
+
+        const std::size_t expectedBytes = static_cast<std::size_t>(width) *
+                                          static_cast<std::size_t>(height) *
+                                          sizeof(torirender::Vec3);
+        if (offsetBytes != expectedBytes) {
+          return mpiBail("MPI gather byte count mismatch with final image buffer size.");
         }
       }
 
-      localPixelsDone +=
-          static_cast<std::uint64_t>(tileEnd - tileStart) * static_cast<std::uint64_t>(width);
-      updateHeartbeat();
+      {
+        const auto mpiCallStart = std::chrono::steady_clock::now();
+        MPI_Gatherv(localColors.data(),
+                    localCountBytes,
+                    MPI_BYTE,
+                    mpi.rank == 0 ? finalColors.data() : nullptr,
+                    mpi.rank == 0 ? recvCounts.data() : nullptr,
+                    mpi.rank == 0 ? displacements.data() : nullptr,
+                    MPI_BYTE,
+                    0,
+                    MPI_COMM_WORLD);
+        const double gatherSeconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
+        localMpiGatherSeconds += gatherSeconds;
+        localMpiTime += gatherSeconds;
+      }
+    } else {
+      finalColors = std::move(localColors);
     }
-  }
-  if (!(kIsGpuBinary
-#if defined(TORIRENDER_USE_OPENACC)
-        && mode == "parallel"
+#else
+    finalColors = std::move(localColors);
 #endif
-        )) {
-    localKernelTime =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - kernelStart).count();
-  }
 
-  std::vector<torirender::Vec3> finalColors;
+    const auto renderEnd = std::chrono::steady_clock::now();
+    double elapsedSeconds = std::chrono::duration<double>(renderEnd - renderStart).count();
 
 #if defined(TORIRENDER_USE_MPI)
-  if (mpi.size > 1) {
-    const std::size_t localBytes = localColors.size() * sizeof(torirender::Vec3);
-    if (localBytes > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-      return mpiBail("Local MPI send buffer exceeds MPI int count limit.");
+    if (mpi.enabled) {
+      double maxElapsed = elapsedSeconds;
+      const auto mpiCallStart = std::chrono::steady_clock::now();
+      MPI_Reduce(&elapsedSeconds, &maxElapsed, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+      const double reduceSeconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
+      localSynchronizationSeconds += reduceSeconds;
+      localMpiTime += reduceSeconds;
+      elapsedSeconds = maxElapsed;
     }
-    const int localCountBytes = static_cast<int>(localBytes);
+#endif
 
-    std::vector<int> recvCounts;
-    std::vector<int> displacements;
     if (mpi.rank == 0) {
-      recvCounts.resize(static_cast<std::size_t>(mpi.size), 0);
-      displacements.resize(static_cast<std::size_t>(mpi.size), 0);
-      finalColors.resize(static_cast<std::size_t>(width) * static_cast<std::size_t>(height),
-                         torirender::Vec3{});
+      const auto outputStart = std::chrono::steady_clock::now();
+      writeHeartbeat(paths.statusPath,
+                     runId,
+                     kBackendTag,
+                     mode,
+                     mpi.size,
+                     desiredOmpThreads,
+                     kIsGpuBinary ? detectedGpus : 0,
+                     totalPixels,
+                     totalPixels,
+                     elapsedSeconds,
+                     currentHeartbeatSeconds);
+
+      torirender::Image image(width, height);
+      if (!image.setPixels(std::move(finalColors))) {
+        std::cerr << "Failed to transfer render buffer into image object.\n";
+#if defined(TORIRENDER_USE_MPI)
+        MPI_Abort(MPI_COMM_WORLD, 1);
+#endif
+        return 1;
+      }
+
+      if (!image.save(paths.imagePath.string())) {
+        std::cerr << "Failed to save image: " << paths.imagePath.string() << '\n';
+#if defined(TORIRENDER_USE_MPI)
+        MPI_Abort(MPI_COMM_WORLD, 1);
+#endif
+        return 1;
+      }
+
+      if (!appendMetricsCsv(paths.metricsCsvPath,
+                            runId,
+                            timestampToken,
+                            kBackendTag,
+                            mode,
+                            paths.imageFileName,
+                            width,
+                            height,
+                            samplesPerPixel,
+                            maxDepth,
+                            mpi.size,
+                            desiredOmpThreads,
+                            kIsGpuBinary ? detectedGpus : 0,
+                            elapsedSeconds,
+                            errorMessage)) {
+        std::cerr << "Warning: " << errorMessage << '\n';
+      }
+      localOutputTime =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - outputStart).count();
+
+      std::cout << "ToriRender completed\n";
+      std::cout << "  image: " << paths.imagePath.string() << '\n';
+      std::cout << "  metrics: " << paths.metricsCsvPath.string() << '\n';
+      std::cout << "  status: " << paths.statusPath.string() << '\n';
+      std::cout << "  elapsed: " << std::fixed << std::setprecision(3) << elapsedSeconds << " s\n";
     }
+
+    const auto rankEndSteady = std::chrono::steady_clock::now();
+    const double localTotalTime =
+        std::chrono::duration<double>(rankEndSteady - rankStartSteady).count();
+    const std::string rankEndWall = wallClockNow();
+    const CpuUsageSample cpuEndSample = captureCpuUsageSample();
+
+    resourceTracker.set_section_seconds("scene", localSceneTime);
+    resourceTracker.set_section_seconds("kernel", localKernelTime);
+    resourceTracker.set_section_seconds("transfer", localTransferTime);
+    resourceTracker.set_section_seconds("mpi", localMpiTime);
+    resourceTracker.set_section_seconds("output", localOutputTime);
+    resourceTracker.set_section_seconds("total", localTotalTime);
+
+    resourceTracker.log_gpu_execution(
+        localKernelLaunches, localKernelsAsync, localGpuActiveTime, localTransferTime);
+    resourceTracker.log_cpu_usage(cpuEndSample.userSeconds - cpuStartSample.userSeconds,
+                                  cpuEndSample.systemSeconds - cpuStartSample.systemSeconds,
+                                  cpuEndSample.peakMemoryKb,
+                                  localTotalTime);
+    resourceTracker.set_total_runtime(localTotalTime);
+    resourceTracker.set_rank_end_time(rankEndWall);
 
     {
-      const auto mpiCallStart = std::chrono::steady_clock::now();
-      MPI_Gather(&localCountBytes,
-                 1,
-                 MPI_INT,
-                 mpi.rank == 0 ? recvCounts.data() : nullptr,
-                 1,
-                 MPI_INT,
+      auto& record = resourceTracker.local_record();
+      record.sceneTime = localSceneTime;
+      record.kernelTime = localKernelTime;
+      record.transferTime = localTransferTime;
+      record.mpiTime = localMpiTime;
+      record.outputTime = localOutputTime;
+      record.totalTime = localTotalTime;
+      record.raysProcessed = localPrimaryRays;
+      record.kernelLaunches = localKernelLaunches;
+      record.kernelsAsync = localKernelsAsync;
+      record.gpuActiveTime = localGpuActiveTime;
+      record.cpuUserTime = cpuEndSample.userSeconds - cpuStartSample.userSeconds;
+      record.cpuSystemTime = cpuEndSample.systemSeconds - cpuStartSample.systemSeconds;
+      record.cpuWallTime = localTotalTime;
+      record.cpuIdleEstimate =
+          std::max(0.0, localTotalTime - (record.cpuUserTime + record.cpuSystemTime));
+      record.peakMemoryKb = cpuEndSample.peakMemoryKb;
+      record.rankEndTime = rankEndWall;
+    }
+
+    RankPerfPacked localPerf{};
+    std::vector<RankPerfPacked> gatheredPerf;
+    if (profilingEnabled) {
+      localPerf.rankComputeSeconds = localRankComputeSeconds;
+      localPerf.rankTotalSeconds = localTotalTime;
+      localPerf.rankRenderRegionSeconds = localRenderRegionWallSeconds;
+      localPerf.tileComputeSumSeconds = localTileStats.sumSeconds;
+      localPerf.tileComputeMaxSeconds = localTileStats.maxSeconds;
+      localPerf.tileComputeMinSeconds = localTileStats.safeMin();
+      localPerf.ompParallelRegionSeconds = localOmpParallelRegionSeconds;
+      localPerf.tileCount = static_cast<unsigned long long>(localTileCount);
+      localPerf.pixelCount = static_cast<unsigned long long>(localPixelCount);
+      localPerf.sampleCount = static_cast<unsigned long long>(localSampleCount);
+#if defined(TORIRENDER_USE_MPI)
+      if (mpi.size > 1) {
+        if (mpi.rank == 0) {
+          gatheredPerf.resize(static_cast<std::size_t>(mpi.size));
+        }
+        MPI_Gather(&localPerf,
+                   static_cast<int>(sizeof(localPerf)),
+                   MPI_BYTE,
+                   mpi.rank == 0 ? gatheredPerf.data() : nullptr,
+                   static_cast<int>(sizeof(localPerf)),
+                   MPI_BYTE,
+                   0,
+                   MPI_COMM_WORLD);
+      } else
+#endif
+      {
+        if (mpi.rank == 0) {
+          gatheredPerf.push_back(localPerf);
+        }
+      }
+    }
+
+    const auto finalizationStart = std::chrono::steady_clock::now();
+#if defined(TORIRENDER_USE_MPI)
+    if (mpi.size > 1) {
+      const torirender::runtime::ResourceRecordPacked localPacked =
+          torirender::runtime::ResourceTracker::pack_record(resourceTracker.local_record());
+      std::vector<torirender::runtime::ResourceRecordPacked> gathered;
+      if (mpi.rank == 0) {
+        gathered.resize(static_cast<std::size_t>(mpi.size));
+      }
+
+      MPI_Gather(&localPacked,
+                 static_cast<int>(sizeof(localPacked)),
+                 MPI_BYTE,
+                 mpi.rank == 0 ? gathered.data() : nullptr,
+                 static_cast<int>(sizeof(localPacked)),
+                 MPI_BYTE,
                  0,
                  MPI_COMM_WORLD);
-      localMpiTime +=
-          std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
-    }
 
-    if (mpi.rank == 0) {
-      std::size_t offsetBytes = 0;
-      for (int i = 0; i < mpi.size; ++i) {
-        if (offsetBytes > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-          return mpiBail("MPI displacement exceeds MPI int count limit.");
+      if (mpi.rank == 0) {
+        std::vector<torirender::runtime::ResourceRecord> records;
+        records.reserve(gathered.size());
+        for (const auto& packed : gathered) {
+          records.push_back(torirender::runtime::ResourceTracker::unpack_record(packed));
         }
-        displacements[static_cast<std::size_t>(i)] = static_cast<int>(offsetBytes);
-        offsetBytes += static_cast<std::size_t>(recvCounts[static_cast<std::size_t>(i)]);
-      }
-
-      const std::size_t expectedBytes = static_cast<std::size_t>(width) *
-                                        static_cast<std::size_t>(height) * sizeof(torirender::Vec3);
-      if (offsetBytes != expectedBytes) {
-        return mpiBail("MPI gather byte count mismatch with final image buffer size.");
+        resourceTracker.set_all_records(std::move(records));
       }
     }
-
-    {
-      const auto mpiCallStart = std::chrono::steady_clock::now();
-      MPI_Gatherv(localColors.data(),
-                  localCountBytes,
-                  MPI_BYTE,
-                  mpi.rank == 0 ? finalColors.data() : nullptr,
-                  mpi.rank == 0 ? recvCounts.data() : nullptr,
-                  mpi.rank == 0 ? displacements.data() : nullptr,
-                  MPI_BYTE,
-                  0,
-                  MPI_COMM_WORLD);
-      localMpiTime +=
-          std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
-    }
-  } else {
-    finalColors = std::move(localColors);
-  }
-#else
-  finalColors = std::move(localColors);
 #endif
-
-  const auto renderEnd = std::chrono::steady_clock::now();
-  double elapsedSeconds = std::chrono::duration<double>(renderEnd - renderStart).count();
-
-#if defined(TORIRENDER_USE_MPI)
-  if (mpi.enabled) {
-    double maxElapsed = elapsedSeconds;
-    const auto mpiCallStart = std::chrono::steady_clock::now();
-    MPI_Reduce(&elapsedSeconds, &maxElapsed, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
-    localMpiTime +=
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - mpiCallStart).count();
-    elapsedSeconds = maxElapsed;
-  }
-#endif
-
-  if (mpi.rank == 0) {
-    const auto outputStart = std::chrono::steady_clock::now();
-    writeHeartbeat(paths.statusPath,
-                   runId,
-                   kBackendTag,
-                   mode,
-                   mpi.size,
-                   desiredOmpThreads,
-                   kIsGpuBinary ? detectedGpus : 0,
-                   totalPixels,
-                   totalPixels,
-                   elapsedSeconds,
-                   currentHeartbeatSeconds);
-
-    torirender::Image image(width, height);
-    if (!image.setPixels(std::move(finalColors))) {
-      std::cerr << "Failed to transfer render buffer into image object.\n";
-#if defined(TORIRENDER_USE_MPI)
-      MPI_Abort(MPI_COMM_WORLD, 1);
-#endif
-      return 1;
-    }
-
-    if (!image.save(paths.imagePath.string())) {
-      std::cerr << "Failed to save image: " << paths.imagePath.string() << '\n';
-#if defined(TORIRENDER_USE_MPI)
-      MPI_Abort(MPI_COMM_WORLD, 1);
-#endif
-      return 1;
-    }
-
-    if (!appendMetricsCsv(paths.metricsCsvPath,
-                          runId,
-                          timestampToken,
-                          kBackendTag,
-                          mode,
-                          paths.imageFileName,
-                          width,
-                          height,
-                          samplesPerPixel,
-                          maxDepth,
-                          mpi.size,
-                          desiredOmpThreads,
-                          kIsGpuBinary ? detectedGpus : 0,
-                          elapsedSeconds,
-                          errorMessage)) {
-      std::cerr << "Warning: " << errorMessage << '\n';
-    }
-    localOutputTime =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - outputStart).count();
-
-    std::cout << "ToriRender completed\n";
-    std::cout << "  image: " << paths.imagePath.string() << '\n';
-    std::cout << "  metrics: " << paths.metricsCsvPath.string() << '\n';
-    std::cout << "  status: " << paths.statusPath.string() << '\n';
-    std::cout << "  elapsed: " << std::fixed << std::setprecision(3) << elapsedSeconds << " s\n";
-  }
-
-  const auto rankEndSteady = std::chrono::steady_clock::now();
-  const double localTotalTime =
-      std::chrono::duration<double>(rankEndSteady - rankStartSteady).count();
-  const std::string rankEndWall = wallClockNow();
-  const CpuUsageSample cpuEndSample = captureCpuUsageSample();
-
-  resourceTracker.set_section_seconds("scene", localSceneTime);
-  resourceTracker.set_section_seconds("kernel", localKernelTime);
-  resourceTracker.set_section_seconds("transfer", localTransferTime);
-  resourceTracker.set_section_seconds("mpi", localMpiTime);
-  resourceTracker.set_section_seconds("output", localOutputTime);
-  resourceTracker.set_section_seconds("total", localTotalTime);
-
-  resourceTracker.log_gpu_execution(
-      localKernelLaunches, localKernelsAsync, localGpuActiveTime, localTransferTime);
-  resourceTracker.log_cpu_usage(cpuEndSample.userSeconds - cpuStartSample.userSeconds,
-                                cpuEndSample.systemSeconds - cpuStartSample.systemSeconds,
-                                cpuEndSample.peakMemoryKb,
-                                localTotalTime);
-  resourceTracker.set_total_runtime(localTotalTime);
-  resourceTracker.set_rank_end_time(rankEndWall);
-
-  {
-    auto& record = resourceTracker.local_record();
-    record.sceneTime = localSceneTime;
-    record.kernelTime = localKernelTime;
-    record.transferTime = localTransferTime;
-    record.mpiTime = localMpiTime;
-    record.outputTime = localOutputTime;
-    record.totalTime = localTotalTime;
-    record.raysProcessed = localPrimaryRays;
-    record.kernelLaunches = localKernelLaunches;
-    record.kernelsAsync = localKernelsAsync;
-    record.gpuActiveTime = localGpuActiveTime;
-    record.cpuUserTime = cpuEndSample.userSeconds - cpuStartSample.userSeconds;
-    record.cpuSystemTime = cpuEndSample.systemSeconds - cpuStartSample.systemSeconds;
-    record.cpuWallTime = localTotalTime;
-    record.cpuIdleEstimate =
-        std::max(0.0, localTotalTime - (record.cpuUserTime + record.cpuSystemTime));
-    record.peakMemoryKb = cpuEndSample.peakMemoryKb;
-    record.rankEndTime = rankEndWall;
-  }
-
-#if defined(TORIRENDER_USE_MPI)
-  if (mpi.size > 1) {
-    const torirender::runtime::ResourceRecordPacked localPacked =
-        torirender::runtime::ResourceTracker::pack_record(resourceTracker.local_record());
-    std::vector<torirender::runtime::ResourceRecordPacked> gathered;
-    if (mpi.rank == 0) {
-      gathered.resize(static_cast<std::size_t>(mpi.size));
-    }
-
-    MPI_Gather(&localPacked,
-               static_cast<int>(sizeof(localPacked)),
-               MPI_BYTE,
-               mpi.rank == 0 ? gathered.data() : nullptr,
-               static_cast<int>(sizeof(localPacked)),
-               MPI_BYTE,
-               0,
-               MPI_COMM_WORLD);
 
     if (mpi.rank == 0) {
-      std::vector<torirender::runtime::ResourceRecord> records;
-      records.reserve(gathered.size());
-      for (const auto& packed : gathered) {
-        records.push_back(torirender::runtime::ResourceTracker::unpack_record(packed));
+      std::string resourceError;
+      if (!resourceTracker.finalize_and_write(&resourceError)) {
+        std::cerr << "Warning: failed to write resource usage report: " << resourceError << '\n';
+      } else {
+        std::cout << "  resource metrics: " << (paths.outputDir / "resource_metrics.csv").string()
+                  << '\n';
+        std::cout << "  resource report: "
+                  << (paths.outputDir / "run_reports" / ("resource_report_" + runId + ".txt")).string()
+                  << '\n';
       }
-      resourceTracker.set_all_records(std::move(records));
     }
-  }
-#endif
+    localFinalizationSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - finalizationStart).count();
 
-  if (mpi.rank == 0) {
-    std::string resourceError;
-    if (!resourceTracker.finalize_and_write(&resourceError)) {
-      std::cerr << "Warning: failed to write resource usage report: " << resourceError << '\n';
-    } else {
-      std::cout << "  resource metrics: " << (paths.outputDir / "resource_metrics.csv").string()
-                << '\n';
-      std::cout
-          << "  resource report: "
-          << (paths.outputDir / "run_reports" / ("resource_report_" + runId + ".txt")).string()
-          << '\n';
-    }
-  }
-
+    double mpiFinalizeSeconds = 0.0;
 #if defined(TORIRENDER_USE_MPI)
-  if (mpi.initializedByApp) {
-    MPI_Finalize();
-    mpi.initializedByApp = false;
-  }
+    if (mpi.initializedByApp) {
+      const auto finalizeStart = std::chrono::steady_clock::now();
+      MPI_Finalize();
+      mpiFinalizeSeconds =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - finalizeStart).count();
+      mpi.initializedByApp = false;
+    }
 #endif
+    localFinalizationSeconds += mpiFinalizeSeconds;
 
-  return 0;
+    const double totalWallSeconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - runWallStart).count();
+
+    if (profilingEnabled && mpi.rank == 0) {
+      double maxRankComputeSeconds = 0.0;
+      double minRankComputeSeconds = std::numeric_limits<double>::infinity();
+      double meanRankComputeSeconds = 0.0;
+      double maxRankTotalSeconds = 0.0;
+      double rankRenderRegionMax = 0.0;
+      double tileComputeSumSeconds = 0.0;
+      double tileComputeMaxSeconds = 0.0;
+      double tileComputeMinSeconds = std::numeric_limits<double>::infinity();
+      std::uint64_t aggregatedTileCount = 0;
+      std::uint64_t aggregatedPixelCount = 0;
+      std::uint64_t aggregatedSampleCount = 0;
+
+      for (const auto& rankPerf : gatheredPerf) {
+        maxRankComputeSeconds = std::max(maxRankComputeSeconds, rankPerf.rankComputeSeconds);
+        minRankComputeSeconds = std::min(minRankComputeSeconds, rankPerf.rankComputeSeconds);
+        meanRankComputeSeconds += rankPerf.rankComputeSeconds;
+        maxRankTotalSeconds = std::max(maxRankTotalSeconds, rankPerf.rankTotalSeconds);
+        rankRenderRegionMax = std::max(rankRenderRegionMax, rankPerf.rankRenderRegionSeconds);
+        tileComputeSumSeconds += rankPerf.tileComputeSumSeconds;
+        tileComputeMaxSeconds = std::max(tileComputeMaxSeconds, rankPerf.tileComputeMaxSeconds);
+        if (rankPerf.tileCount > 0ULL) {
+          tileComputeMinSeconds = std::min(tileComputeMinSeconds, rankPerf.tileComputeMinSeconds);
+        }
+        aggregatedTileCount += static_cast<std::uint64_t>(rankPerf.tileCount);
+        aggregatedPixelCount += static_cast<std::uint64_t>(rankPerf.pixelCount);
+        aggregatedSampleCount += static_cast<std::uint64_t>(rankPerf.sampleCount);
+      }
+
+      if (!gatheredPerf.empty()) {
+        meanRankComputeSeconds /= static_cast<double>(gatheredPerf.size());
+      }
+      if (!std::isfinite(minRankComputeSeconds)) {
+        minRankComputeSeconds = 0.0;
+      }
+      if (!std::isfinite(tileComputeMinSeconds)) {
+        tileComputeMinSeconds = 0.0;
+      }
+
+      const double loadImbalanceSeconds =
+          std::max(0.0, maxRankComputeSeconds - meanRankComputeSeconds);
+      const double loadImbalanceRatio =
+          meanRankComputeSeconds > 0.0 ? (maxRankComputeSeconds / meanRankComputeSeconds) : 0.0;
+
+      const double preRenderWallSeconds =
+          std::chrono::duration<double>(sceneStart - runWallStart).count() + localSceneTime;
+      const double serialConfigSetupSeconds = std::max(
+          0.0,
+          preRenderWallSeconds - sectionProfiler.seconds("scene_parse_seconds") - localCameraSetupSeconds -
+              localBvhBuildSeconds - mpiInitSeconds - localMpiBroadcastSeconds -
+              localMpiScatterSeconds - localSyncBeforeRenderSeconds);
+
+      const double sigmaSetupSeconds =
+          sectionProfiler.seconds("scene_parse_seconds") + localCameraSetupSeconds +
+          localBvhBuildSeconds + serialConfigSetupSeconds + localOutputTime;
+
+      const double communicationOverheadSeconds =
+          localMpiBroadcastSeconds + localMpiScatterSeconds + localMpiGatherSeconds;
+      const double synchronizationOverheadSeconds = localSynchronizationSeconds;
+      const double schedulingOverheadSeconds =
+          std::max(0.0, localOmpParallelRegionSeconds - localTileStats.sumSeconds);
+      const double outputOverheadSeconds = localOutputTime;
+
+      BaselineQuery baselineQuery{};
+      baselineQuery.sceneFile = cli.configPath;
+      baselineQuery.width = width;
+      baselineQuery.height = height;
+      baselineQuery.samplesPerPixel = samplesPerPixel;
+      baselineQuery.maxDepth = maxDepth;
+
+      std::optional<double> baselineSeconds;
+      if (mode == "serial") {
+        baselineSeconds = totalWallSeconds;
+      } else {
+        baselineSeconds = findSerialBaselineSeconds(cli.perfCsvPath, baselineQuery);
+      }
+
+      if (!baselineSeconds.has_value() && mode != "serial") {
+        std::cerr << "Warning: no matching serial baseline found for profiling model decomposition.\n";
+      }
+
+      const double tsSerialBaselineSeconds = baselineSeconds.value_or(0.0);
+      const double sigmaSeconds = sigmaSetupSeconds;
+      const double phiSerialSeconds = tsSerialBaselineSeconds > 0.0
+                                          ? (tsSerialBaselineSeconds - sigmaSeconds)
+                                          : 0.0;
+      const double idealPhiOverPSeconds = pEffective > 0
+                                              ? safeDivide(phiSerialSeconds, static_cast<double>(pEffective))
+                                              : 0.0;
+      const double kappaEstimatedRawSeconds = tsSerialBaselineSeconds > 0.0
+                                                  ? (totalWallSeconds - sigmaSeconds - idealPhiOverPSeconds)
+                                                  : 0.0;
+      const double kappaEstimatedClampedSeconds = std::max(0.0, kappaEstimatedRawSeconds);
+      const double tpModelReconstructedSeconds =
+          sigmaSeconds + idealPhiOverPSeconds + kappaEstimatedRawSeconds;
+      const double overheadFractionOfTp = safeDivide(kappaEstimatedRawSeconds, totalWallSeconds);
+      const double sigmaFractionOfTs = safeDivide(sigmaSeconds, tsSerialBaselineSeconds);
+      const double phiFractionOfTs = safeDivide(phiSerialSeconds, tsSerialBaselineSeconds);
+
+      const double speedup = safeDivide(tsSerialBaselineSeconds, totalWallSeconds);
+      const double efficiency = safeDivide(speedup, static_cast<double>(pEffective));
+      const double f = safeDivide(sigmaSeconds, tsSerialBaselineSeconds);
+      const double amdahlIdealSpeedup =
+          (tsSerialBaselineSeconds > 0.0 && pEffective > 0)
+              ? safeDivide(1.0, f + (1.0 - f) / static_cast<double>(pEffective))
+              : 0.0;
+      const double karpFlattE = (pEffective > 1 && speedup > 0.0)
+                                    ? safeDivide((1.0 / speedup) - (1.0 / static_cast<double>(pEffective)),
+                                                 1.0 - (1.0 / static_cast<double>(pEffective)))
+                                    : 0.0;
+      const double parallelEfficiencyLoss = pEffective > 0 ? (1.0 - efficiency) : 0.0;
+
+      const double otherOverheadSeconds =
+          kappaEstimatedRawSeconds - communicationOverheadSeconds - synchronizationOverheadSeconds -
+          schedulingOverheadSeconds - loadImbalanceSeconds - outputOverheadSeconds;
+
+      sectionProfiler.add_seconds("total_wall_seconds", totalWallSeconds);
+      sectionProfiler.add_seconds("sigma_setup_seconds", sigmaSetupSeconds);
+      sectionProfiler.add_seconds("camera_setup_seconds", localCameraSetupSeconds);
+      sectionProfiler.add_seconds("bvh_build_seconds", localBvhBuildSeconds);
+      sectionProfiler.add_seconds("mpi_broadcast_seconds", localMpiBroadcastSeconds);
+      sectionProfiler.add_seconds("mpi_scatter_or_task_distribution_seconds", localMpiScatterSeconds);
+      sectionProfiler.add_seconds("render_region_wall_seconds", rankRenderRegionMax);
+      sectionProfiler.add_seconds("omp_parallel_region_seconds", localOmpParallelRegionSeconds);
+      sectionProfiler.add_seconds("tile_compute_sum_seconds", tileComputeSumSeconds);
+      sectionProfiler.add_seconds("tile_compute_max_seconds", tileComputeMaxSeconds);
+      sectionProfiler.add_seconds("tile_compute_min_seconds", tileComputeMinSeconds);
+      sectionProfiler.add_seconds("mpi_gather_seconds", localMpiGatherSeconds);
+      sectionProfiler.add_seconds("output_write_seconds", localOutputTime);
+      sectionProfiler.add_seconds("synchronization_seconds", localSynchronizationSeconds);
+      sectionProfiler.add_seconds("finalization_seconds", localFinalizationSeconds);
+
+      std::vector<torirender::runtime::CsvField> fields;
+      fields.reserve(128);
+      addField(fields, "run_id", runId);
+      addField(fields, "timestamp", timestampToken);
+      addField(fields, "backend", kBackendTag);
+      addField(fields, "mode", mode);
+      addField(fields, "run_label", cli.runLabel);
+      addField(fields, "image_width", width);
+      addField(fields, "image_height", height);
+      addField(fields, "resolution", std::to_string(width) + "x" + std::to_string(height));
+      addField(fields, "samples_per_pixel", samplesPerPixel);
+      addField(fields, "max_depth", maxDepth);
+      addField(fields, "mpi_ranks", mpi.size);
+      addField(fields, "omp_threads", desiredOmpThreads);
+      addField(fields, "p_effective", pEffective);
+      addField(fields, "scene_file", normalizeScenePath(cli.configPath));
+      addField(fields, "output_file", paths.imagePath.string());
+      addField(fields, "git_commit_if_available", TORIRENDER_GIT_COMMIT);
+
+      addField(fields, "total_wall_seconds", totalWallSeconds);
+      addField(fields, "sigma_setup_seconds", sigmaSetupSeconds);
+      addField(fields, "scene_parse_seconds", sectionProfiler.seconds("scene_parse_seconds"));
+      addField(fields, "bvh_build_seconds", localBvhBuildSeconds);
+      addField(fields, "camera_setup_seconds", localCameraSetupSeconds);
+      addField(fields, "mpi_init_seconds", mpiInitSeconds);
+      addField(fields, "mpi_broadcast_seconds", localMpiBroadcastSeconds);
+      addField(fields,
+               "mpi_scatter_or_task_distribution_seconds",
+               localMpiScatterSeconds);
+      addField(fields, "render_region_wall_seconds", rankRenderRegionMax);
+      addField(fields, "omp_parallel_region_seconds", localOmpParallelRegionSeconds);
+      addField(fields, "tile_compute_sum_seconds", tileComputeSumSeconds);
+      addField(fields, "tile_compute_max_seconds", tileComputeMaxSeconds);
+      addField(fields, "tile_compute_min_seconds", tileComputeMinSeconds);
+      addField(fields, "mpi_gather_seconds", localMpiGatherSeconds);
+      addField(fields, "output_write_seconds", localOutputTime);
+      addField(fields, "synchronization_seconds", localSynchronizationSeconds);
+      addField(fields, "finalization_seconds", localFinalizationSeconds);
+
+      addField(fields, "max_rank_compute_seconds", maxRankComputeSeconds);
+      addField(fields, "mean_rank_compute_seconds", meanRankComputeSeconds);
+      addField(fields, "min_rank_compute_seconds", minRankComputeSeconds);
+      addField(fields, "max_rank_total_seconds", maxRankTotalSeconds);
+      addField(fields, "rank_tile_count_sum", aggregatedTileCount);
+      addField(fields, "rank_pixel_count_sum", aggregatedPixelCount);
+      addField(fields, "rank_sample_count_sum", aggregatedSampleCount);
+      addField(fields, "load_imbalance_seconds", loadImbalanceSeconds);
+      addField(fields, "load_imbalance_ratio", loadImbalanceRatio);
+
+      addField(fields, "communication_overhead_seconds", communicationOverheadSeconds);
+      addField(fields, "synchronization_overhead_seconds", synchronizationOverheadSeconds);
+      addField(fields, "scheduling_overhead_seconds", schedulingOverheadSeconds);
+      addField(fields, "output_overhead_seconds", outputOverheadSeconds);
+      addField(fields, "other_overhead_seconds", otherOverheadSeconds);
+
+      addField(fields, "Ts_serial_baseline_seconds", tsSerialBaselineSeconds);
+      addField(fields, "sigma_seconds", sigmaSeconds);
+      addField(fields, "phi_serial_seconds", phiSerialSeconds);
+      addField(fields, "ideal_phi_over_p_seconds", idealPhiOverPSeconds);
+      addField(fields, "kappa_estimated_seconds", kappaEstimatedRawSeconds);
+      addField(fields, "kappa_estimated_clamped_seconds", kappaEstimatedClampedSeconds);
+      addField(fields, "Tp_model_reconstructed_seconds", tpModelReconstructedSeconds);
+      addField(fields, "overhead_fraction_of_Tp", overheadFractionOfTp);
+      addField(fields, "sigma_fraction_of_Ts", sigmaFractionOfTs);
+      addField(fields, "phi_fraction_of_Ts", phiFractionOfTs);
+
+      addField(fields, "speedup", speedup);
+      addField(fields, "efficiency", efficiency);
+      addField(fields, "amdahl_ideal_speedup_from_measured_sigma", amdahlIdealSpeedup);
+      addField(fields, "karp_flatt_e", karpFlattE);
+      addField(fields, "parallel_efficiency_loss", parallelEfficiencyLoss);
+
+      addField(fields, "serial_baseline_found", baselineSeconds.has_value() ? 1 : 0);
+
+      std::string perfError;
+      if (!appendProfileCsvRow(cli.perfCsvPath, fields, perfError)) {
+        std::cerr << "Warning: failed to append profiling CSV row: " << perfError << '\n';
+      }
+    }
+
+    if (profilingEnabled && cli.profilePerRank) {
+      std::filesystem::path perRankPath(cli.perfCsvPath);
+      const std::string stem = perRankPath.stem().string();
+      const std::string ext = perRankPath.extension().string().empty() ? ".csv" : perRankPath.extension().string();
+      perRankPath = perRankPath.parent_path() /
+                    (stem + "_rank" + std::to_string(mpi.rank) + ext);
+
+      std::vector<torirender::runtime::CsvField> rankFields;
+      addField(rankFields, "run_id", runId);
+      addField(rankFields, "timestamp", timestampToken);
+      addField(rankFields, "mode", mode);
+      addField(rankFields, "backend", kBackendTag);
+      addField(rankFields, "rank", mpi.rank);
+      addField(rankFields, "mpi_ranks", mpi.size);
+      addField(rankFields, "omp_threads", desiredOmpThreads);
+      addField(rankFields, "rank_total_seconds", localTotalTime);
+      addField(rankFields, "rank_compute_seconds", localRankComputeSeconds);
+      addField(rankFields, "rank_render_region_seconds", localRenderRegionWallSeconds);
+      addField(rankFields, "tile_count", localTileCount);
+      addField(rankFields, "pixel_count", localPixelCount);
+      addField(rankFields, "sample_count", localSampleCount);
+      addField(rankFields, "tile_compute_sum_seconds", localTileStats.sumSeconds);
+      addField(rankFields, "tile_compute_max_seconds", localTileStats.maxSeconds);
+      addField(rankFields, "tile_compute_min_seconds", localTileStats.safeMin());
+
+      std::string perRankError;
+      if (!appendProfileCsvRow(perRankPath, rankFields, perRankError)) {
+        std::cerr << "Warning: failed to append per-rank profiling CSV row: " << perRankError
+                  << '\n';
+      }
+    }
+
+    return 0;
+  }
+
+  std::cerr << "Internal error: unexpected render setup scope exit.\n";
+  return 1;
 }
 
 }  // namespace

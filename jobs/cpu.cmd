@@ -228,6 +228,32 @@ if [[ ! "${HEARTBEAT_SECONDS}" =~ ^[0-9]+$ ]] || ((HEARTBEAT_SECONDS <= 0)); the
   exit 1
 fi
 
+PROFILE="${PROFILE:-0}"
+if [[ "${PROFILE}" != "0" && "${PROFILE}" != "1" ]]; then
+  echo "Invalid PROFILE=${PROFILE} (use 0 or 1)."
+  exit 1
+fi
+
+PROFILE_PER_RANK="${PROFILE_PER_RANK:-0}"
+if [[ "${PROFILE_PER_RANK}" != "0" && "${PROFILE_PER_RANK}" != "1" ]]; then
+  echo "Invalid PROFILE_PER_RANK=${PROFILE_PER_RANK} (use 0 or 1)."
+  exit 1
+fi
+
+PERF_CSV_PATH="${PERF_CSV_PATH:-results/perf/metrics.csv}"
+RUN_LABEL="${RUN_LABEL:-}"
+
+PROFILE_ARGS=()
+if [[ "${PROFILE}" == "1" ]]; then
+  PROFILE_ARGS+=(--profile --perf-csv "${PERF_CSV_PATH}")
+  if [[ "${PROFILE_PER_RANK}" == "1" ]]; then
+    PROFILE_ARGS+=(--profile-per-rank)
+  fi
+  if [[ -n "${RUN_LABEL}" ]]; then
+    PROFILE_ARGS+=(--run-label "${RUN_LABEL}")
+  fi
+fi
+
 echo "AQuA CPU job started"
 echo "job_id=${JOB_ID_FULL}"
 echo "queue=${QUEUE_NAME}"
@@ -235,6 +261,10 @@ echo "mode=${MODE}"
 echo "mpi_ranks=${MPI_RANKS}"
 echo "omp_threads=${OMP_THREADS}"
 echo "ncpus=${ALLOC_NCPUS}"
+echo "profile=${PROFILE}"
+echo "profile_per_rank=${PROFILE_PER_RANK}"
+echo "perf_csv_path=${PERF_CSV_PATH}"
+echo "run_label=${RUN_LABEL:-none}"
 echo "cpu_detect_sources=PBS_NCPUS:${PBS_NCPUS:-unset},PBS_NP:${PBS_NP:-unset},NCPUS:${NCPUS:-unset},NODEFILE_SLOTS:${NODEFILE_SLOTS}"
 echo "required_ncpus=${REQUIRED_NCPUS:-none}"
 echo "enforce_ncpus=${ENFORCE_NCPUS}"
@@ -417,6 +447,7 @@ if [[ ${status} -eq 0 ]]; then
         --mpi-ranks "${MPI_RANKS}" \
         --omp-threads "${OMP_THREADS}" \
         --heartbeat "${HEARTBEAT_SECONDS}" \
+        "${PROFILE_ARGS[@]}" \
         >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
       status=$?
     fi
@@ -426,6 +457,7 @@ if [[ ${status} -eq 0 ]]; then
       --mpi-ranks 1 \
       --omp-threads 1 \
       --heartbeat "${HEARTBEAT_SECONDS}" \
+      "${PROFILE_ARGS[@]}" \
       >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
     status=$?
   fi

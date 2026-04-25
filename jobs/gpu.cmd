@@ -171,6 +171,32 @@ if [[ ! "${HEARTBEAT_SECONDS}" =~ ^[0-9]+$ ]] || ((HEARTBEAT_SECONDS <= 0)); the
   exit 1
 fi
 
+PROFILE="${PROFILE:-0}"
+if [[ "${PROFILE}" != "0" && "${PROFILE}" != "1" ]]; then
+  echo "Invalid PROFILE=${PROFILE} (use 0 or 1)."
+  exit 1
+fi
+
+PROFILE_PER_RANK="${PROFILE_PER_RANK:-0}"
+if [[ "${PROFILE_PER_RANK}" != "0" && "${PROFILE_PER_RANK}" != "1" ]]; then
+  echo "Invalid PROFILE_PER_RANK=${PROFILE_PER_RANK} (use 0 or 1)."
+  exit 1
+fi
+
+PERF_CSV_PATH="${PERF_CSV_PATH:-results/perf/metrics.csv}"
+RUN_LABEL="${RUN_LABEL:-}"
+
+PROFILE_ARGS=()
+if [[ "${PROFILE}" == "1" ]]; then
+  PROFILE_ARGS+=(--profile --perf-csv "${PERF_CSV_PATH}")
+  if [[ "${PROFILE_PER_RANK}" == "1" ]]; then
+    PROFILE_ARGS+=(--profile-per-rank)
+  fi
+  if [[ -n "${RUN_LABEL}" ]]; then
+    PROFILE_ARGS+=(--run-label "${RUN_LABEL}")
+  fi
+fi
+
 if [[ "${OPENACC_REPORT}" != "0" && "${OPENACC_REPORT}" != "1" ]]; then
   echo "Invalid OPENACC_REPORT=${OPENACC_REPORT} (use 0 or 1)."
   exit 1
@@ -189,6 +215,10 @@ echo "omp_threads=${OMP_THREADS}"
 echo "ncpus=${ALLOC_NCPUS}"
 echo "ngpus=${ALLOC_NGPUS}"
 echo "walltime=${REQUESTED_WALLTIME}"
+echo "profile=${PROFILE}"
+echo "profile_per_rank=${PROFILE_PER_RANK}"
+echo "perf_csv_path=${PERF_CSV_PATH}"
+echo "run_label=${RUN_LABEL:-none}"
 echo "openacc_gpu_arch=${OPENACC_GPU_FLAGS}"
 echo "openacc_report=${OPENACC_REPORT_CMAKE}"
 echo "pbs_log=${PBS_LOG_REL}"
@@ -476,6 +506,7 @@ if [[ ${status} -eq 0 ]]; then
       --mpi-ranks "${MPI_RANKS}" \
       --omp-threads 1 \
       --heartbeat "${HEARTBEAT_SECONDS}" \
+      "${PROFILE_ARGS[@]}" \
       >"${RENDER_STDOUT_LOG_REL}" 2>"${RENDER_STDERR_LOG_REL}"
     status=$?
     set -e

@@ -26,6 +26,7 @@ class Scene {
 
   Scene() noexcept;
   explicit Scene(const SceneConfig& config) noexcept;
+  Scene(const SceneConfig& config, double* bvhBuildSeconds) noexcept;
 
   TORIRENDER_ACC_ROUTINE_SEQ
   bool hit(const Ray& ray,

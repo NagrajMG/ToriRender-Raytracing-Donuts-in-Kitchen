@@ -102,6 +102,14 @@ cmake --build build --target torirender_cpu -j
 ./build/torirender_cpu config/scene.json output --mode serial --mpi-ranks 1 --omp-threads 1
 ```
 
+Profiling-enabled manual example:
+
+```bash
+./build/torirender_cpu config/scene.json final \
+  --mode parallel --mpi-ranks 8 --omp-threads 5 \
+  --profile --perf-csv results/perf/metrics.csv --run-label cpu_8x5
+```
+
 ## 4. AQuA Job Runs
 
 ### 4.1 CPU Job
@@ -116,6 +124,12 @@ Parallel override example:
 qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=1,CONFIG_PATH=config/scene.json,OUTPUT_DIR_NAME=output jobs/cpu.cmd
 ```
 
+Profiling override example:
+
+```bash
+qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=5,PROFILE=1,PERF_CSV_PATH=results/perf/metrics.csv,RUN_LABEL=cpu_8x5 jobs/cpu.cmd
+```
+
 ### 4.2 GPU Job
 
 ```bash
@@ -126,6 +140,12 @@ Override example:
 
 ```bash
 qsub -v MPI_RANKS=4,OPENACC_GPU_ARCH=ccall,OPENACC_REPORT=0,CONFIG_PATH=config/scene.json,OUTPUT_DIR_NAME=final jobs/gpu.cmd
+```
+
+Profiling override example:
+
+```bash
+qsub -v MPI_RANKS=4,PROFILE=1,PERF_CSV_PATH=results/perf/metrics.csv,RUN_LABEL=gpu_4x1 jobs/gpu.cmd
 ```
 
 Rule: set `MPI_RANKS == ngpus` (1 rank per GPU).
@@ -144,6 +164,8 @@ Generated under your selected output directory (default `final/`):
   - run-level render summary (parallel mode)
 - `resource_metrics.csv`
   - per-rank resource rows (MPI/GPU/CPU/timing/workload)
+- `results/perf/metrics.csv` (when `--profile` is used)
+  - run-level lecture-model/performance decomposition row
 - `run_reports/`
   - `<run_id>.txt` (job/run report style)
   - `resource_report_<run_id>.txt` (resource analysis report)
@@ -160,6 +182,32 @@ Columns:
 Columns:
 - `run_id,rank,hostname,gpu_id,total_ranks,ncpus,ngpus,omp_threads,scene_time,kernel_time,transfer_time,mpi_time,output_time,total_time,rays_processed`
 
+### 6.3 `results/perf/metrics.csv`
+
+Generated only when `--profile` is enabled and build option `TORIRENDER_ENABLE_PROFILING=ON`.
+
+Key fields include:
+- run identity/config: `timestamp,mode,image_width,image_height,samples_per_pixel,max_depth,mpi_ranks,omp_threads,p_effective,scene_file,output_file,git_commit_if_available`
+- measured sections: `total_wall_seconds,sigma_setup_seconds,scene_parse_seconds,bvh_build_seconds,camera_setup_seconds,render_region_wall_seconds,mpi_* ,output_write_seconds,synchronization_seconds,finalization_seconds`
+- model terms: `Ts_serial_baseline_seconds,sigma_seconds,phi_serial_seconds,ideal_phi_over_p_seconds,kappa_estimated_seconds`
+- scaling: `speedup,efficiency,amdahl_ideal_speedup_from_measured_sigma,karp_flatt_e`
+
+Analysis command:
+
+```bash
+python scripts/analyze_perf.py --input results/perf/metrics.csv --outdir results/perf
+```
+
+Outputs:
+- `results/perf/performance_analysis.csv`
+- `results/perf/performance_summary.md`
+- `results/perf/plots/time_decomposition_stacked_bar.png`
+- `results/perf/plots/overhead_breakdown_stacked_bar.png`
+- `results/perf/plots/speedup_vs_processors.png`
+- `results/perf/plots/efficiency_vs_processors.png`
+- `results/perf/plots/karp_flatt_vs_processors.png`
+- `results/perf/plots/total_time_vs_processors.png`
+
 ## 7. Quick Quality Presets
 
 | Goal | Suggested camera settings |
@@ -172,4 +220,6 @@ Columns:
 
 - `SceneConfig` is not a separate executable; it is loaded internally by runner binaries.
 - You only pass JSON path to `torirender_cpu` / `torirender_gpu` or PBS jobs.
+- Build option: `-DTORIRENDER_ENABLE_PROFILING=ON|OFF` controls profiling instrumentation availability.
+- Runtime profile flags: `--profile --perf-csv <path> --run-label <text> [--profile-per-rank]`.
 - Keep `logs/`, `results/`, and generated `final/` artifacts out of commits unless needed.

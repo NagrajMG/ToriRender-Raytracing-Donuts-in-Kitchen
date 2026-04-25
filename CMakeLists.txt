@@ -10,6 +10,7 @@ option(TORIRENDER_ENABLE_OPENACC "Enable OpenACC for GPU runner when supported" 
 option(TORIRENDER_OPENACC_REPORT "Enable OpenACC compiler optimization reports" ON)
 option(TORIRENDER_FETCH_CATCH2 "Fetch Catch2 if not found" ON)
 option(TORIRENDER_FETCH_STB "Fetch stb headers if not found locally" ON)
+option(TORIRENDER_ENABLE_PROFILING "Enable low-overhead performance profiling hooks" ON)
 set(TORIRENDER_OPENACC_GPU_ARCH "ccall" CACHE STRING
     "OpenACC GPU arch for NVHPC (example: cc80, ccall)")
 
@@ -31,6 +32,7 @@ add_library(torirender_core
     src/geometry/BVH.cpp
     src/io/Image.cpp
     src/render/Shader.cpp
+    src/runtime/Profiling.cpp
     src/runtime/ResourceTracker.cpp
     src/scene/SceneConfig.cpp
     src/scene/Scene.cpp
@@ -40,6 +42,27 @@ target_include_directories(torirender_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+if(TORIRENDER_ENABLE_PROFILING)
+    target_compile_definitions(torirender_core PUBLIC TORIRENDER_ENABLE_PROFILING=1)
+endif()
+
+set(TORIRENDER_GIT_COMMIT_SHA "unknown")
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE TORIRENDER_GIT_COMMIT_SHA
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+endif()
+if(TORIRENDER_GIT_COMMIT_SHA STREQUAL "")
+    set(TORIRENDER_GIT_COMMIT_SHA "unknown")
+endif()
+target_compile_definitions(torirender_core
+    PUBLIC TORIRENDER_GIT_COMMIT=\"${TORIRENDER_GIT_COMMIT_SHA}\")
 
 # parallel/runtime backends.
 if(TORIRENDER_ENABLE_MPI)

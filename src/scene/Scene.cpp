@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
 #include <string>
 
@@ -98,9 +99,22 @@ Scene::Scene() noexcept : Scene(defaultSceneConfig()) {
 
 // build full scene
 Scene::Scene(const SceneConfig& config) noexcept
+    : Scene(config, nullptr) {
+}
+
+// build full scene with optional explicit BVH build timing
+Scene::Scene(const SceneConfig& config, double* bvhBuildSeconds) noexcept
     : torusA_(buildTorus(config.torusPrimary)),
       torusB_(buildTorus(config.torusSecondary)),
-      bvh_(torusA_, torusB_),
+      bvh_([&]() {
+        const auto start = std::chrono::steady_clock::now();
+        BVHNode node(torusA_, torusB_);
+        if (bvhBuildSeconds != nullptr) {
+          *bvhBuildSeconds =
+              std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        }
+        return node;
+      }()),
       shader_(),
       lightDirection_(config.lightDirection.normalized()),
       backgroundLow_(config.backgroundLow),
