@@ -54,27 +54,56 @@ def parse_timestamp(value: str) -> datetime:
     return datetime.min
 
 
-def discover_csv_files(input_path: Path) -> List[Path]:
-    if input_path.is_dir():
-        root = input_path
-    else:
-        root = input_path.parent
-    files = sorted(root.glob("*.csv"))
-    out = []
-    for p in files:
-        if p.name in {"performance_analysis.csv"}:
-            continue
-        if p.name.startswith("performance_"):
-            continue
-        if p.name == "resource_metrics.csv":
-            continue
-        out.append(p)
+def discover_metric_files(input_path: Path) -> List[Path]:
+    if input_path.is_file():
+        return [input_path]
+
+    root = input_path if input_path.is_dir() else input_path.parent
+    out: List[Path] = []
+    for pattern in ("*.txt", "*.csv"):
+        for p in sorted(root.glob(pattern)):
+            if p.name in {"performance_analysis.csv", "resource_metrics.csv"}:
+                continue
+            if p.name.startswith("performance_"):
+                continue
+            out.append(p)
     return out
 
 
-def read_rows(csv_files: Iterable[Path]) -> List[Dict[str, str]]:
+def read_profile_txt_row(path: Path) -> Dict[str, str] | None:
+    row: Dict[str, str] = {}
+    try:
+        with path.open("r") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                if not key:
+                    continue
+                row[key] = value.strip()
+    except Exception:
+        return None
+
+    if "total_wall_seconds" not in row:
+        return None
+    row["__source_csv"] = str(path)
+    return row
+
+
+def read_rows(metric_files: Iterable[Path]) -> List[Dict[str, str]]:
     rows: List[Dict[str, str]] = []
-    for path in csv_files:
+    for path in metric_files:
+        if path.suffix.lower() == ".txt":
+            parsed = read_profile_txt_row(path)
+            if parsed is not None:
+                rows.append(parsed)
+            continue
+
+        if path.suffix.lower() != ".csv":
+            continue
+
         try:
             with path.open("r", newline="") as handle:
                 reader = csv.DictReader(handle)
@@ -767,8 +796,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze ToriRender profiling metrics.")
     parser.add_argument(
         "--input",
-        default="final/perf/metrics.csv",
-        help="Input CSV path or directory (default: final/perf/metrics.csv).",
+        default="final/perf",
+        help="Input profiling file or directory (default: final/perf).",
     )
     parser.add_argument(
         "--outdir",
@@ -781,14 +810,14 @@ def main() -> int:
     outdir = Path(args.outdir).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
 
-    csv_files = discover_csv_files(input_path)
-    if not csv_files and input_path.is_file():
-        csv_files = [input_path]
+    metric_files = discover_metric_files(input_path)
+    if not metric_files and input_path.is_file():
+        metric_files = [input_path]
 
     warnings: List[str] = []
-    rows = read_rows(csv_files)
+    rows = read_rows(metric_files)
     if not rows:
-        warnings.append("No valid profiling CSV rows were found.")
+        warnings.append("No valid profiling rows were found.")
         write_csv([], outdir / "performance_analysis.csv")
         write_summary([], warnings, outdir)
         save_plots([], outdir)

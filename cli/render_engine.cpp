@@ -109,7 +109,7 @@ struct CliOptions {
   std::optional<int> heartbeatOverride;
   bool profileEnabled = false;
   bool profilePerRank = false;
-  std::string perfCsvPath = "final/perf/metrics.csv";
+  std::string perfDir = "final/perf";
   std::string runLabel;
 };
 
@@ -274,7 +274,7 @@ void printUsage(const char* binaryName) {
   std::cerr << "Usage: " << binaryName
             << " [config_path] [output_dir] [--mode serial|parallel] [--mpi-ranks N]"
                " [--omp-threads N] [--heartbeat N] [--profile]"
-               " [--profile-per-rank] [--perf-csv <path>] [--run-label <label>]\n";
+               " [--profile-per-rank] [--perf-dir <path>] [--run-label <label>]\n";
 }
 
 // Parse integer option values safely without throwing to caller.
@@ -354,12 +354,27 @@ bool parseArgs(int argc, char** argv, CliOptions& out) {
       continue;
     }
 
+    if (arg == "--perf-dir") {
+      if (i + 1 >= argc) {
+        std::cerr << "Missing value for --perf-dir\n";
+        return false;
+      }
+      out.perfDir = argv[++i];
+      continue;
+    }
+
+    // Backward-compatible alias; output is now text per run in a directory.
     if (arg == "--perf-csv") {
       if (i + 1 >= argc) {
         std::cerr << "Missing value for --perf-csv\n";
         return false;
       }
-      out.perfCsvPath = argv[++i];
+      const std::filesystem::path legacyPath(argv[++i]);
+      if (legacyPath.has_extension()) {
+        out.perfDir = legacyPath.parent_path().empty() ? "." : legacyPath.parent_path().string();
+      } else {
+        out.perfDir = legacyPath.string();
+      }
       continue;
     }
 
@@ -550,32 +565,32 @@ std::string normalizeScenePath(const std::string& rawPath) {
   return lexical.string();
 }
 
-std::vector<std::string> parseCsvLine(const std::string& line) {
-  std::vector<std::string> values;
-  std::string current;
-  bool inQuotes = false;
-
-  for (std::size_t i = 0; i < line.size(); ++i) {
-    const char ch = line[i];
-    if (ch == '"') {
-      if (inQuotes && i + 1 < line.size() && line[i + 1] == '"') {
-        current.push_back('"');
-        ++i;
-      } else {
-        inQuotes = !inQuotes;
-      }
-      continue;
-    }
-
-    if (!inQuotes && ch == ',') {
-      values.push_back(current);
-      current.clear();
-      continue;
-    }
-    current.push_back(ch);
+std::string trimCopy(const std::string& text) {
+  std::size_t begin = 0;
+  while (begin < text.size() && std::isspace(static_cast<unsigned char>(text[begin])) != 0) {
+    ++begin;
   }
-  values.push_back(current);
-  return values;
+
+  std::size_t end = text.size();
+  while (end > begin && std::isspace(static_cast<unsigned char>(text[end - 1])) != 0) {
+    --end;
+  }
+
+  return text.substr(begin, end - begin);
+}
+
+std::optional<std::pair<std::string, std::string>> parseKeyValueLine(const std::string& line) {
+  const auto equalPos = line.find('=');
+  if (equalPos == std::string::npos) {
+    return std::nullopt;
+  }
+
+  const std::string key = trimCopy(line.substr(0, equalPos));
+  if (key.empty()) {
+    return std::nullopt;
+  }
+  const std::string value = trimCopy(line.substr(equalPos + 1));
+  return std::make_pair(key, value);
 }
 
 bool parsePositiveDouble(const std::string& token, double& out) {
@@ -591,63 +606,86 @@ bool parsePositiveDouble(const std::string& token, double& out) {
   }
 }
 
-std::optional<double> findSerialBaselineSeconds(const std::filesystem::path& csvPath,
+std::optional<double> findSerialBaselineSeconds(const std::filesystem::path& perfOutputPath,
                                                 const BaselineQuery& query) {
-  std::ifstream input(csvPath);
-  if (!input) {
+  std::filesystem::path searchDir = perfOutputPath;
+  std::error_code ec;
+  if (std::filesystem::is_regular_file(searchDir, ec)) {
+    searchDir = searchDir.parent_path();
+    ec.clear();
+  }
+
+  if (searchDir.empty()) {
     return std::nullopt;
   }
-
-  std::string headerLine;
-  if (!std::getline(input, headerLine)) {
-    return std::nullopt;
-  }
-  const std::vector<std::string> headers = parseCsvLine(headerLine);
-  std::unordered_map<std::string, std::size_t> index;
-  for (std::size_t i = 0; i < headers.size(); ++i) {
-    index.emplace(headers[i], i);
-  }
-
-  const auto hasColumn = [&](const char* name) -> bool {
-    return index.find(name) != index.end();
-  };
-
-  if (!(hasColumn("mode") && hasColumn("scene_file") && hasColumn("image_width") &&
-        hasColumn("image_height") && hasColumn("samples_per_pixel") && hasColumn("max_depth") &&
-        hasColumn("total_wall_seconds"))) {
+  if (!std::filesystem::exists(searchDir, ec) || ec ||
+      !std::filesystem::is_directory(searchDir, ec) || ec) {
     return std::nullopt;
   }
 
   const auto sceneNorm = normalizeScenePath(query.sceneFile);
   std::optional<double> latest;
+  std::string latestTimestamp;
 
-  std::string line;
-  while (std::getline(input, line)) {
-    if (line.empty()) {
+  for (const auto& entry : std::filesystem::directory_iterator(searchDir)) {
+    if (!entry.is_regular_file()) {
       continue;
     }
-    const std::vector<std::string> values = parseCsvLine(line);
-    if (values.size() < headers.size()) {
+    if (entry.path().extension() != ".txt") {
       continue;
     }
 
-    const auto valueAt = [&](const char* key) -> const std::string& {
-      return values[index.at(key)];
+    std::ifstream input(entry.path());
+    if (!input) {
+      continue;
+    }
+
+    std::unordered_map<std::string, std::string> values;
+    std::string line;
+    while (std::getline(input, line)) {
+      if (line.empty()) {
+        continue;
+      }
+      const auto parsed = parseKeyValueLine(line);
+      if (!parsed.has_value()) {
+        continue;
+      }
+      values[parsed->first] = parsed->second;
+    }
+
+    const auto valueAt = [&](const char* key) -> const std::string* {
+      const auto it = values.find(key);
+      if (it == values.end()) {
+        return nullptr;
+      }
+      return &it->second;
     };
 
-    if (toLower(valueAt("mode")) != "serial") {
+    const std::string* mode = valueAt("mode");
+    const std::string* sceneFile = valueAt("scene_file");
+    const std::string* widthText = valueAt("image_width");
+    const std::string* heightText = valueAt("image_height");
+    const std::string* sppText = valueAt("samples_per_pixel");
+    const std::string* depthText = valueAt("max_depth");
+    const std::string* totalText = valueAt("total_wall_seconds");
+    if (mode == nullptr || sceneFile == nullptr || widthText == nullptr || heightText == nullptr ||
+        sppText == nullptr || depthText == nullptr || totalText == nullptr) {
       continue;
     }
 
-    if (normalizeScenePath(valueAt("scene_file")) != sceneNorm) {
+    if (toLower(*mode) != "serial") {
+      continue;
+    }
+
+    if (normalizeScenePath(*sceneFile) != sceneNorm) {
       continue;
     }
 
     try {
-      const int width = std::stoi(valueAt("image_width"));
-      const int height = std::stoi(valueAt("image_height"));
-      const int spp = std::stoi(valueAt("samples_per_pixel"));
-      const int depth = std::stoi(valueAt("max_depth"));
+      const int width = std::stoi(*widthText);
+      const int height = std::stoi(*heightText);
+      const int spp = std::stoi(*sppText);
+      const int depth = std::stoi(*depthText);
       if (width != query.width || height != query.height || spp != query.samplesPerPixel ||
           depth != query.maxDepth) {
         continue;
@@ -657,10 +695,18 @@ std::optional<double> findSerialBaselineSeconds(const std::filesystem::path& csv
     }
 
     double totalSeconds = 0.0;
-    if (!parsePositiveDouble(valueAt("total_wall_seconds"), totalSeconds)) {
+    if (!parsePositiveDouble(*totalText, totalSeconds)) {
       continue;
     }
-    latest = totalSeconds;
+
+    std::string timestamp = "";
+    if (const std::string* timestampText = valueAt("timestamp"); timestampText != nullptr) {
+      timestamp = *timestampText;
+    }
+    if (!latest.has_value() || timestamp >= latestTimestamp) {
+      latest = totalSeconds;
+      latestTimestamp = timestamp;
+    }
   }
 
   return latest;
@@ -752,20 +798,34 @@ void addField(std::vector<torirender::runtime::CsvField>& fields, std::string na
   fields.push_back(torirender::runtime::CsvField{std::move(name), formatDouble(value)});
 }
 
-bool appendProfileCsvRow(const std::filesystem::path& csvPath,
-                         const std::vector<torirender::runtime::CsvField>& fields,
-                         std::string& errorMessage) {
-  const std::filesystem::path parent = csvPath.parent_path();
+bool writeProfileTextReport(const std::filesystem::path& reportPath,
+                            const std::vector<torirender::runtime::CsvField>& fields,
+                            std::string& errorMessage) {
+  const std::filesystem::path parent = reportPath.parent_path();
   if (!parent.empty()) {
     std::error_code ec;
     std::filesystem::create_directories(parent, ec);
     if (ec) {
-      errorMessage = "Failed to create profiling CSV directory: " + parent.string() + " (" +
+      errorMessage = "Failed to create profiling report directory: " + parent.string() + " (" +
                      ec.message() + ")";
       return false;
     }
   }
-  return torirender::runtime::append_csv_row(csvPath, fields, &errorMessage);
+
+  std::ofstream out(reportPath, std::ios::trunc);
+  if (!out) {
+    errorMessage = "Failed to open profiling report for write: " + reportPath.string();
+    return false;
+  }
+
+  for (const auto& field : fields) {
+    out << field.name << '=' << field.value << '\n';
+  }
+  if (!out) {
+    errorMessage = "Failed while writing profiling report: " + reportPath.string();
+    return false;
+  }
+  return true;
 }
 
 #if defined(TORIRENDER_USE_MPI)
@@ -1709,7 +1769,7 @@ int runMain(int argc, char** argv) {
       if (mode == "serial") {
         baselineSeconds = totalWallSeconds;
       } else {
-        baselineSeconds = findSerialBaselineSeconds(cli.perfCsvPath, baselineQuery);
+        baselineSeconds = findSerialBaselineSeconds(cli.perfDir, baselineQuery);
       }
 
       if (!baselineSeconds.has_value() && mode != "serial") {
@@ -1841,18 +1901,18 @@ int runMain(int argc, char** argv) {
 
       addField(fields, "serial_baseline_found", baselineSeconds.has_value() ? 1 : 0);
 
+      const std::filesystem::path summaryReportPath =
+          std::filesystem::path(cli.perfDir) / (runId + ".txt");
       std::string perfError;
-      if (!appendProfileCsvRow(cli.perfCsvPath, fields, perfError)) {
-        std::cerr << "Warning: failed to append profiling CSV row: " << perfError << '\n';
+      if (!writeProfileTextReport(summaryReportPath, fields, perfError)) {
+        std::cerr << "Warning: failed to write profiling report: " << perfError << '\n';
       }
     }
 
     if (profilingEnabled && cli.profilePerRank) {
-      std::filesystem::path perRankPath(cli.perfCsvPath);
-      const std::string stem = perRankPath.stem().string();
-      const std::string ext = perRankPath.extension().string().empty() ? ".csv" : perRankPath.extension().string();
-      perRankPath = perRankPath.parent_path() /
-                    (stem + "_rank" + std::to_string(mpi.rank) + ext);
+      const std::filesystem::path perRankPath =
+          std::filesystem::path(cli.perfDir) /
+          (runId + "_rank" + std::to_string(mpi.rank) + ".txt");
 
       std::vector<torirender::runtime::CsvField> rankFields;
       addField(rankFields, "run_id", runId);
@@ -1873,8 +1933,8 @@ int runMain(int argc, char** argv) {
       addField(rankFields, "tile_compute_min_seconds", localTileStats.safeMin());
 
       std::string perRankError;
-      if (!appendProfileCsvRow(perRankPath, rankFields, perRankError)) {
-        std::cerr << "Warning: failed to append per-rank profiling CSV row: " << perRankError
+      if (!writeProfileTextReport(perRankPath, rankFields, perRankError)) {
+        std::cerr << "Warning: failed to write per-rank profiling report: " << perRankError
                   << '\n';
       }
     }

@@ -107,7 +107,7 @@ Profiling-enabled manual example:
 ```bash
 ./build/torirender_cpu config/scene.json final \
   --mode parallel --mpi-ranks 8 --omp-threads 5 \
-  --profile --perf-csv final/perf/metrics.csv --run-label cpu_8x5
+  --profile --perf-dir final/perf --run-label cpu_8x5
 ```
 
 ## 4. AQuA Job Runs
@@ -127,7 +127,7 @@ qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=1,CONFIG_PATH=config/scene.json,OU
 Profiling override example:
 
 ```bash
-qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=5,PROFILE=1,PERF_CSV_PATH=final/perf/metrics.csv,RUN_LABEL=cpu_8x5 jobs/cpu.cmd
+qsub -v MODE=parallel,MPI_RANKS=8,OMP_THREADS=5,PROFILE=1,PERF_DIR=final/perf,RUN_LABEL=cpu_8x5 jobs/cpu.cmd
 ```
 
 ### 4.2 GPU Job
@@ -145,7 +145,7 @@ qsub -v MPI_RANKS=4,OPENACC_GPU_ARCH=ccall,OPENACC_REPORT=0,CONFIG_PATH=config/s
 Profiling override example:
 
 ```bash
-qsub -v MPI_RANKS=4,PROFILE=1,PERF_CSV_PATH=final/perf/metrics.csv,RUN_LABEL=gpu_4x1 jobs/gpu.cmd
+qsub -v MPI_RANKS=4,PROFILE=1,PERF_DIR=final/perf,RUN_LABEL=gpu_4x1 jobs/gpu.cmd
 ```
 
 Rule: set `MPI_RANKS == ngpus` (1 rank per GPU).
@@ -164,8 +164,8 @@ Generated under your selected output directory (default `final/`):
   - run-level render summary (parallel mode)
 - `resource_metrics.csv`
   - per-rank resource rows (MPI/GPU/CPU/timing/workload)
-- `final/perf/metrics.csv` (when `--profile` is used)
-  - run-level lecture-model/performance decomposition row
+- `final/perf/<run_id>.txt` (when `--profile` is used)
+  - run-level lecture-model/performance decomposition report (key=value)
 - `run_reports/`
   - `<run_id>.txt` (job/run report style)
   - `resource_report_<run_id>.txt` (resource analysis report)
@@ -182,9 +182,10 @@ Columns:
 Columns:
 - `run_id,rank,hostname,gpu_id,total_ranks,ncpus,ngpus,omp_threads,scene_time,kernel_time,transfer_time,mpi_time,output_time,total_time,rays_processed`
 
-### 6.3 `final/perf/metrics.csv`
+### 6.3 `final/perf/<run_id>.txt`
 
 Generated only when `--profile` is enabled and build option `TORIRENDER_ENABLE_PROFILING=ON`.
+Each run writes a separate text file, so previous profiling runs are not overwritten.
 
 Key fields include:
 - run identity/config: `timestamp,mode,image_width,image_height,samples_per_pixel,max_depth,mpi_ranks,omp_threads,p_effective,scene_file,output_file,git_commit_if_available`
@@ -195,7 +196,7 @@ Key fields include:
 Analysis command:
 
 ```bash
-python scripts/analyze_perf.py --input final/perf/metrics.csv --outdir final/perf
+python scripts/analyze_perf.py --input final/perf --outdir final/perf
 ```
 
 Outputs:
@@ -221,5 +222,5 @@ Outputs:
 - `SceneConfig` is not a separate executable; it is loaded internally by runner binaries.
 - You only pass JSON path to `torirender_cpu` / `torirender_gpu` or PBS jobs.
 - Build option: `-DTORIRENDER_ENABLE_PROFILING=ON|OFF` controls profiling instrumentation availability.
-- Runtime profile flags: `--profile --perf-csv <path> --run-label <text> [--profile-per-rank]`.
+- Runtime profile flags: `--profile --perf-dir <path> --run-label <text> [--profile-per-rank]`.
 - Keep `logs/`, `results/`, and generated `final/` artifacts out of commits unless needed.

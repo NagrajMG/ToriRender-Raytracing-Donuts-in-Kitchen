@@ -240,12 +240,12 @@ if [[ "${PROFILE_PER_RANK}" != "0" && "${PROFILE_PER_RANK}" != "1" ]]; then
   exit 1
 fi
 
-PERF_CSV_PATH="${PERF_CSV_PATH:-final/perf/metrics.csv}"
+PERF_DIR="${PERF_DIR:-final/perf}"
 RUN_LABEL="${RUN_LABEL:-}"
 
 PROFILE_ARGS=()
 if [[ "${PROFILE}" == "1" ]]; then
-  PROFILE_ARGS+=(--profile --perf-csv "${PERF_CSV_PATH}")
+  PROFILE_ARGS+=(--profile --perf-dir "${PERF_DIR}")
   if [[ "${PROFILE_PER_RANK}" == "1" ]]; then
     PROFILE_ARGS+=(--profile-per-rank)
   fi
@@ -263,7 +263,7 @@ echo "omp_threads=${OMP_THREADS}"
 echo "ncpus=${ALLOC_NCPUS}"
 echo "profile=${PROFILE}"
 echo "profile_per_rank=${PROFILE_PER_RANK}"
-echo "perf_csv_path=${PERF_CSV_PATH}"
+echo "perf_dir=${PERF_DIR}"
 echo "run_label=${RUN_LABEL:-none}"
 echo "cpu_detect_sources=PBS_NCPUS:${PBS_NCPUS:-unset},PBS_NP:${PBS_NP:-unset},NCPUS:${NCPUS:-unset},NODEFILE_SLOTS:${NODEFILE_SLOTS}"
 echo "required_ncpus=${REQUIRED_NCPUS:-none}"

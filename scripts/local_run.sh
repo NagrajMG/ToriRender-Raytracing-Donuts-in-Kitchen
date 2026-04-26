@@ -27,7 +27,7 @@ fi
 
 PROFILE="${PROFILE:-0}"
 PROFILE_PER_RANK="${PROFILE_PER_RANK:-0}"
-PERF_CSV_PATH="${PERF_CSV_PATH:-final/perf/metrics.csv}"
+PERF_DIR="${PERF_DIR:-final/perf}"
 RUN_LABEL="${RUN_LABEL:-}"
 
 if [[ "${PROFILE}" != "0" && "${PROFILE}" != "1" ]]; then
@@ -41,7 +41,7 @@ fi
 
 PROFILE_ARGS=()
 if [[ "${PROFILE}" == "1" ]]; then
-  PROFILE_ARGS+=(--profile --perf-csv "${PERF_CSV_PATH}")
+  PROFILE_ARGS+=(--profile --perf-dir "${PERF_DIR}")
   if [[ "${PROFILE_PER_RANK}" == "1" ]]; then
     PROFILE_ARGS+=(--profile-per-rank)
   fi
