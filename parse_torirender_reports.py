@@ -6,7 +6,7 @@ import csv
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 
 COLUMNS = [
@@ -18,6 +18,7 @@ COLUMNS = [
     "cores used",
     "time used in hours",
 ]
+SUPPORTED_MODES = ("parallel", "serial")
 
 
 def parse_allocated_cpus(line: str) -> int | None:
@@ -91,8 +92,10 @@ def sort_rows(rows: List[Dict[str, object]]) -> None:
     )
 
 
-def parse_reports(input_dir: Path) -> tuple[List[Dict[str, object]], List[Path], List[str]]:
-    rows: List[Dict[str, object]] = []
+def parse_reports(
+    input_dir: Path, selected_modes: Set[str]
+) -> tuple[Dict[str, List[Dict[str, object]]], List[Path], List[str]]:
+    rows_by_mode: Dict[str, List[Dict[str, object]]] = {mode: [] for mode in SUPPORTED_MODES}
     skipped_files: List[Path] = []
     warnings: List[str] = []
 
@@ -137,7 +140,9 @@ def parse_reports(input_dir: Path) -> tuple[List[Dict[str, object]], List[Path],
 
         try:
             mode = fields[3].strip().lower()
-            if mode != "parallel":
+            if mode not in SUPPORTED_MODES:
+                continue
+            if mode not in selected_modes:
                 continue
 
             resolution = fields[5].strip()
@@ -158,7 +163,7 @@ def parse_reports(input_dir: Path) -> tuple[List[Dict[str, object]], List[Path],
                 f"mpi*openmp={cores_used}"
             )
 
-        rows.append(
+        rows_by_mode[mode].append(
             {
                 "resolution": resolution,
                 "ssp": ssp,
@@ -170,9 +175,10 @@ def parse_reports(input_dir: Path) -> tuple[List[Dict[str, object]], List[Path],
             }
         )
 
-    rows = [normalize_row(row) for row in rows]
-    sort_rows(rows)
-    return rows, skipped_files, warnings
+    for mode in SUPPORTED_MODES:
+        rows_by_mode[mode] = [normalize_row(row) for row in rows_by_mode[mode]]
+        sort_rows(rows_by_mode[mode])
+    return rows_by_mode, skipped_files, warnings
 
 
 def read_existing_rows(csv_path: Path) -> tuple[List[Dict[str, object]], List[str]]:
@@ -272,7 +278,16 @@ def main() -> int:
     parser.add_argument(
         "--output",
         required=True,
-        help="Output folder for torirender_parallel_summary.csv.",
+        help=(
+            "Output folder for torirender_parallel_summary.csv and/or "
+            "torirender_serial_summary.csv."
+        ),
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("all", "parallel", "serial"),
+        default="all",
+        help="Which run modes to include (default: all).",
     )
     args = parser.parse_args()
 
@@ -283,33 +298,43 @@ def main() -> int:
         print(f"Input folder does not exist or is not a directory: {input_dir}", file=sys.stderr)
         return 2
 
-    rows, skipped_files, warnings = parse_reports(input_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = output_dir / "torirender_parallel_summary.csv"
+    if args.mode == "all":
+        selected_modes = set(SUPPORTED_MODES)
+    else:
+        selected_modes = {args.mode}
 
-    existing_rows, existing_warnings = read_existing_rows(csv_path)
-    warnings.extend(existing_warnings)
-    merged_rows, appended_count = merge_unique_rows(existing_rows, rows)
-    write_csv(merged_rows, csv_path)
+    rows_by_mode, skipped_files, warnings = parse_reports(input_dir, selected_modes)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     if skipped_files:
         print("Warning: skipped files (missing Latest Metrics Row or parse/read failure):")
         for path in skipped_files:
             print(f"  - {path}")
 
+    for mode in SUPPORTED_MODES:
+        if mode not in selected_modes:
+            continue
+
+        mode_rows = rows_by_mode.get(mode, [])
+        csv_path = output_dir / f"torirender_{mode}_summary.csv"
+        existing_rows, existing_warnings = read_existing_rows(csv_path)
+        warnings.extend(existing_warnings)
+        merged_rows, appended_count = merge_unique_rows(existing_rows, mode_rows)
+        write_csv(merged_rows, csv_path)
+
+        print(
+            f"\n[{mode}] Append summary: existing={len(existing_rows)}, "
+            f"parsed_now={len(mode_rows)}, appended_new={appended_count}, "
+            f"final_total={len(merged_rows)}"
+        )
+        print(f"\n[{mode}] Final Table:")
+        print_table(merged_rows)
+        print(f"\n[{mode}] Saved CSV: {csv_path}")
+
     if warnings:
-        print("Warnings:")
+        print("\nWarnings:")
         for warning in warnings:
             print(f"  - {warning}")
-
-    print(
-        f"\nAppend summary: existing={len(existing_rows)}, "
-        f"parsed_now={len(rows)}, appended_new={appended_count}, final_total={len(merged_rows)}"
-    )
-
-    print("\nFinal Table:")
-    print_table(merged_rows)
-    print(f"\nSaved CSV: {csv_path}")
     return 0
 
 
