@@ -242,6 +242,21 @@ fi
 
 PERF_DIR="${PERF_DIR:-final/perf}"
 RUN_LABEL="${RUN_LABEL:-}"
+CMAKE_BIN_OVERRIDE="${CMAKE_BIN_OVERRIDE:-}"
+SKIP_CMAKE_MODULE_LOAD="${SKIP_CMAKE_MODULE_LOAD:-}"
+
+if [[ -z "${SKIP_CMAKE_MODULE_LOAD}" ]]; then
+  if [[ -n "${CMAKE_BIN_OVERRIDE}" ]]; then
+    SKIP_CMAKE_MODULE_LOAD="1"
+  else
+    SKIP_CMAKE_MODULE_LOAD="0"
+  fi
+fi
+
+if [[ "${SKIP_CMAKE_MODULE_LOAD}" != "0" && "${SKIP_CMAKE_MODULE_LOAD}" != "1" ]]; then
+  echo "Invalid SKIP_CMAKE_MODULE_LOAD=${SKIP_CMAKE_MODULE_LOAD} (use 0 or 1)."
+  exit 1
+fi
 
 PROFILE_ARGS=()
 if [[ "${PROFILE}" == "1" ]]; then
@@ -265,6 +280,8 @@ echo "profile=${PROFILE}"
 echo "profile_per_rank=${PROFILE_PER_RANK}"
 echo "perf_dir=${PERF_DIR}"
 echo "run_label=${RUN_LABEL:-none}"
+echo "cmake_override=${CMAKE_BIN_OVERRIDE:-none}"
+echo "skip_cmake_module_load=${SKIP_CMAKE_MODULE_LOAD}"
 echo "cpu_detect_sources=PBS_NCPUS:${PBS_NCPUS:-unset},PBS_NP:${PBS_NP:-unset},NCPUS:${NCPUS:-unset},NODEFILE_SLOTS:${NODEFILE_SLOTS}"
 echo "required_ncpus=${REQUIRED_NCPUS:-none}"
 echo "enforce_ncpus=${ENFORCE_NCPUS}"
@@ -304,9 +321,11 @@ safe_source /usr/share/Modules/init/bash
 
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
-  for cmake_mod in cmake3.26 cmake3.20 cmake3.30 cmake; do
-    module load "${cmake_mod}" >/dev/null 2>&1 && break
-  done
+  if [[ "${SKIP_CMAKE_MODULE_LOAD}" != "1" ]]; then
+    for cmake_mod in cmake3.26 cmake3.20 cmake3.30 cmake; do
+      module load "${cmake_mod}" >/dev/null 2>&1 && break
+    done
+  fi
   for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0; do
     module load "${gcc_mod}" >/dev/null 2>&1 && break
   done
@@ -351,7 +370,7 @@ is_supported_cmake() {
   return 1
 }
 
-CMAKE_BIN="${CMAKE_BIN_OVERRIDE:-}"
+CMAKE_BIN="${CMAKE_BIN_OVERRIDE}"
 if [[ -n "${CMAKE_BIN}" ]] && ! is_supported_cmake "${CMAKE_BIN}"; then
   echo "CMAKE_BIN_OVERRIDE is set but unusable: ${CMAKE_BIN}"
   CMAKE_BIN=""
@@ -373,8 +392,8 @@ if ! is_supported_cmake "${CMAKE_BIN}"; then
     /lfs/sware/cmake3.20/bin/cmake \
     /lfs/sware/cmake3.26/bin/cmake \
     /lfs/sware/cmake3.30/bin/cmake \
-    /usr/bin/cmake \
-    /usr/local/bin/cmake; do
+    /usr/local/bin/cmake \
+    /usr/bin/cmake; do
     if [[ -x "${candidate}" ]] && is_supported_cmake "${candidate}"; then
       CMAKE_BIN="${candidate}"
       break

@@ -185,6 +185,21 @@ fi
 
 PERF_DIR="${PERF_DIR:-final/perf}"
 RUN_LABEL="${RUN_LABEL:-}"
+CMAKE_BIN_OVERRIDE="${CMAKE_BIN_OVERRIDE:-}"
+SKIP_CMAKE_MODULE_LOAD="${SKIP_CMAKE_MODULE_LOAD:-}"
+
+if [[ -z "${SKIP_CMAKE_MODULE_LOAD}" ]]; then
+  if [[ -n "${CMAKE_BIN_OVERRIDE}" ]]; then
+    SKIP_CMAKE_MODULE_LOAD="1"
+  else
+    SKIP_CMAKE_MODULE_LOAD="0"
+  fi
+fi
+
+if [[ "${SKIP_CMAKE_MODULE_LOAD}" != "0" && "${SKIP_CMAKE_MODULE_LOAD}" != "1" ]]; then
+  echo "Invalid SKIP_CMAKE_MODULE_LOAD=${SKIP_CMAKE_MODULE_LOAD} (use 0 or 1)."
+  exit 1
+fi
 
 PROFILE_ARGS=()
 if [[ "${PROFILE}" == "1" ]]; then
@@ -219,6 +234,8 @@ echo "profile=${PROFILE}"
 echo "profile_per_rank=${PROFILE_PER_RANK}"
 echo "perf_dir=${PERF_DIR}"
 echo "run_label=${RUN_LABEL:-none}"
+echo "cmake_override=${CMAKE_BIN_OVERRIDE:-none}"
+echo "skip_cmake_module_load=${SKIP_CMAKE_MODULE_LOAD}"
 echo "openacc_gpu_arch=${OPENACC_GPU_FLAGS}"
 echo "openacc_report=${OPENACC_REPORT_CMAKE}"
 echo "pbs_log=${PBS_LOG_REL}"
@@ -268,7 +285,9 @@ require_module() {
 }
 
 module purge >/dev/null 2>&1 || true
-require_module cmake3.26
+if [[ "${SKIP_CMAKE_MODULE_LOAD}" != "1" ]]; then
+  require_module cmake3.26
+fi
 require_module gcc10.1.0
 require_module nvhpc-21.11
 require_module openmpi415
@@ -309,7 +328,7 @@ is_supported_cmake() {
   return 1
 }
 
-CMAKE_BIN="${CMAKE_BIN_OVERRIDE:-}"
+CMAKE_BIN="${CMAKE_BIN_OVERRIDE}"
 if [[ -n "${CMAKE_BIN}" ]] && ! is_supported_cmake "${CMAKE_BIN}"; then
   echo "CMAKE_BIN_OVERRIDE is set but unusable: ${CMAKE_BIN}"
   CMAKE_BIN=""
@@ -330,8 +349,8 @@ if ! is_supported_cmake "${CMAKE_BIN}"; then
     /lfs/sware/cmake3.20/bin/cmake \
     /lfs/sware/cmake3.26/bin/cmake \
     /lfs/sware/cmake3.30/bin/cmake \
-    /usr/bin/cmake \
-    /usr/local/bin/cmake; do
+    /usr/local/bin/cmake \
+    /usr/bin/cmake; do
     if [[ -x "${candidate}" ]] && is_supported_cmake "${candidate}"; then
       CMAKE_BIN="${candidate}"
       break
