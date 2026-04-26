@@ -6,12 +6,12 @@
 
     "vfov": 45.0,
 
-    "image_width": 1600,
-    "image_height": 900, 
+    "image_width": 640,
+    "image_height": 360, 
   
-    "max_depth": 12, 
+    "max_depth": 2, 
 
-    "samples_per_pixel": 768, 
+    "samples_per_pixel": 2, 
 
     "rng_seed": 1337 
   },
