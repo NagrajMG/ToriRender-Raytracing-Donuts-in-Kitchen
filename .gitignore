@@ -114,7 +114,7 @@ torirender_report.txt
 # ------------------------------
 /logs/*
 !/logs/.gitkeep
-
+/results
 !/results/.gitkeep
 
 *.log
