@@ -242,21 +242,6 @@ fi
 
 PERF_DIR="${PERF_DIR:-final/perf}"
 RUN_LABEL="${RUN_LABEL:-}"
-CMAKE_BIN_OVERRIDE="${CMAKE_BIN_OVERRIDE:-}"
-SKIP_CMAKE_MODULE_LOAD="${SKIP_CMAKE_MODULE_LOAD:-}"
-
-if [[ -z "${SKIP_CMAKE_MODULE_LOAD}" ]]; then
-  if [[ -n "${CMAKE_BIN_OVERRIDE}" ]]; then
-    SKIP_CMAKE_MODULE_LOAD="1"
-  else
-    SKIP_CMAKE_MODULE_LOAD="0"
-  fi
-fi
-
-if [[ "${SKIP_CMAKE_MODULE_LOAD}" != "0" && "${SKIP_CMAKE_MODULE_LOAD}" != "1" ]]; then
-  echo "Invalid SKIP_CMAKE_MODULE_LOAD=${SKIP_CMAKE_MODULE_LOAD} (use 0 or 1)."
-  exit 1
-fi
 
 PROFILE_ARGS=()
 if [[ "${PROFILE}" == "1" ]]; then
@@ -280,8 +265,6 @@ echo "profile=${PROFILE}"
 echo "profile_per_rank=${PROFILE_PER_RANK}"
 echo "perf_dir=${PERF_DIR}"
 echo "run_label=${RUN_LABEL:-none}"
-echo "cmake_override=${CMAKE_BIN_OVERRIDE:-none}"
-echo "skip_cmake_module_load=${SKIP_CMAKE_MODULE_LOAD}"
 echo "cpu_detect_sources=PBS_NCPUS:${PBS_NCPUS:-unset},PBS_NP:${PBS_NP:-unset},NCPUS:${NCPUS:-unset},NODEFILE_SLOTS:${NODEFILE_SLOTS}"
 echo "required_ncpus=${REQUIRED_NCPUS:-none}"
 echo "enforce_ncpus=${ENFORCE_NCPUS}"
@@ -321,11 +304,9 @@ safe_source /usr/share/Modules/init/bash
 
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
-  if [[ "${SKIP_CMAKE_MODULE_LOAD}" != "1" ]]; then
-    for cmake_mod in cmake3.26 cmake3.20 cmake3.30 cmake; do
-      module load "${cmake_mod}" >/dev/null 2>&1 && break
-    done
-  fi
+  for cmake_mod in cmake3.26 cmake3.20 cmake3.30 cmake; do
+    module load "${cmake_mod}" >/dev/null 2>&1 && break
+  done
   for gcc_mod in gcc13.3.0 gcc13.1.0 gcc12.3.0; do
     module load "${gcc_mod}" >/dev/null 2>&1 && break
   done
@@ -334,78 +315,16 @@ if command -v module >/dev/null 2>&1; then
   done
 fi
 
-EXTRA_LD_LIBRARY_PATH="${EXTRA_LD_LIBRARY_PATH:-}"
-if [[ -n "${EXTRA_LD_LIBRARY_PATH}" ]]; then
-  export LD_LIBRARY_PATH="${EXTRA_LD_LIBRARY_PATH}:${LD_LIBRARY_PATH:-}"
-fi
-
-is_supported_cmake() {
-  local cmake_bin="$1"
-  if [[ -z "${cmake_bin}" ]]; then
-    return 1
-  fi
-
-  local version
-  set +e
-  version="$("${cmake_bin}" --version 2>/dev/null | awk 'NR==1 {print $3}')"
-  local status=$?
-  set -e
-  if [[ "${status}" -ne 0 || -z "${version}" ]]; then
-    return 1
-  fi
-
-  local major="${version%%.*}"
-  local rest="${version#*.}"
-  local minor="${rest%%.*}"
-  if [[ ! "${major}" =~ ^[0-9]+$ || ! "${minor}" =~ ^[0-9]+$ ]]; then
-    return 1
-  fi
-
-  if ((major > 3)); then
-    return 0
-  fi
-  if ((major == 3 && minor >= 20)); then
-    return 0
-  fi
-  return 1
-}
-
-CMAKE_BIN="${CMAKE_BIN_OVERRIDE}"
-if [[ -n "${CMAKE_BIN}" ]] && ! is_supported_cmake "${CMAKE_BIN}"; then
-  echo "CMAKE_BIN_OVERRIDE is set but unusable: ${CMAKE_BIN}"
-  CMAKE_BIN=""
-fi
-
-if [[ -z "${CMAKE_BIN}" ]]; then
-  if command -v cmake >/dev/null 2>&1; then
-    CMAKE_BIN="$(command -v cmake)"
-  elif command -v cmake3 >/dev/null 2>&1; then
-    CMAKE_BIN="$(command -v cmake3)"
-  fi
-fi
-
-# Some cmake builds on AQuA may exist in PATH but fail at runtime
-# (e.g., missing libssl.so.1.1). Prefer a working CMake >= 3.20.
-if ! is_supported_cmake "${CMAKE_BIN}"; then
-  CMAKE_BIN=""
-  for candidate in \
-    /lfs/sware/cmake3.20/bin/cmake \
-    /lfs/sware/cmake3.26/bin/cmake \
-    /lfs/sware/cmake3.30/bin/cmake \
-    /usr/local/bin/cmake \
-    /usr/bin/cmake; do
-    if [[ -x "${candidate}" ]] && is_supported_cmake "${candidate}"; then
-      CMAKE_BIN="${candidate}"
-      break
-    fi
-  done
+CMAKE_BIN=""
+if command -v cmake >/dev/null 2>&1; then
+  CMAKE_BIN="$(command -v cmake)"
+elif command -v cmake3 >/dev/null 2>&1; then
+  CMAKE_BIN="$(command -v cmake3)"
 fi
 
 CXX_BIN=""
 if command -v c++ >/dev/null 2>&1; then
   CXX_BIN="$(command -v c++)"
-elif command -v g++ >/dev/null 2>&1; then
-  CXX_BIN="$(command -v g++)"
 fi
 
 MPIRUN_BIN=""
@@ -523,7 +442,7 @@ if [[ ${status} -eq 0 ]]; then
         -np "${MPI_RANKS}" \
         --oversubscribe \
         --bind-to core --map-by slot:PE="${OMP_THREADS}" \
-      ./build/torirender_cpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
+        ./build/torirender_cpu "${CONFIG_PATH}" "${OUTPUT_DIR_NAME}" \
         --mode parallel \
         --mpi-ranks "${MPI_RANKS}" \
         --omp-threads "${OMP_THREADS}" \

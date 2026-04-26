@@ -297,6 +297,59 @@ if [[ -n "${EXTRA_LD_LIBRARY_PATH}" ]]; then
   export LD_LIBRARY_PATH="${EXTRA_LD_LIBRARY_PATH}:${LD_LIBRARY_PATH:-}"
 fi
 
+prepend_ld_library_path() {
+  local dir="$1"
+  if [[ -z "${dir}" || ! -d "${dir}" ]]; then
+    return
+  fi
+  case ":${LD_LIBRARY_PATH:-}:" in
+    *":${dir}:"*) ;;
+    *) export LD_LIBRARY_PATH="${dir}:${LD_LIBRARY_PATH:-}" ;;
+  esac
+}
+
+list_missing_runtime_deps() {
+  local bin_path="$1"
+  if [[ -z "${bin_path}" || ! -x "${bin_path}" ]]; then
+    return
+  fi
+  ldd "${bin_path}" 2>/dev/null | awk '/not found/ {print $1}' | paste -sd' ' -
+}
+
+try_fix_cmake_runtime_deps() {
+  local cmake_bin="$1"
+  if [[ -z "${cmake_bin}" || ! -x "${cmake_bin}" ]]; then
+    return
+  fi
+
+  local missing
+  missing="$(list_missing_runtime_deps "${cmake_bin}")"
+  if [[ -z "${missing}" ]]; then
+    return
+  fi
+
+  prepend_ld_library_path "/usr/local/lib64"
+  prepend_ld_library_path "/usr/local/lib"
+
+  if [[ "${missing}" == *"libssl.so.1.1"* || "${missing}" == *"libcrypto.so.1.1"* ]]; then
+    if command -v module >/dev/null 2>&1; then
+      for ssl_mod in openssl11 openssl1.1 openssl111 openssl; do
+        module load "${ssl_mod}" >/dev/null 2>&1 && break
+      done
+    fi
+
+    for ssl_lib_dir in \
+      /lfs/sware/openssl*/lib64 \
+      /lfs/sware/openssl*/lib \
+      /lfs/sware/*openssl*/lib64 \
+      /lfs/sware/*openssl*/lib; do
+      if [[ -f "${ssl_lib_dir}/libssl.so.1.1" && -f "${ssl_lib_dir}/libcrypto.so.1.1" ]]; then
+        prepend_ld_library_path "${ssl_lib_dir}"
+      fi
+    done
+  fi
+}
+
 is_supported_cmake() {
   local cmake_bin="$1"
   if [[ -z "${cmake_bin}" ]]; then
@@ -329,8 +382,15 @@ is_supported_cmake() {
 }
 
 CMAKE_BIN="${CMAKE_BIN_OVERRIDE}"
+if [[ -n "${CMAKE_BIN}" ]]; then
+  try_fix_cmake_runtime_deps "${CMAKE_BIN}"
+fi
 if [[ -n "${CMAKE_BIN}" ]] && ! is_supported_cmake "${CMAKE_BIN}"; then
   echo "CMAKE_BIN_OVERRIDE is set but unusable: ${CMAKE_BIN}"
+  missing_deps="$(list_missing_runtime_deps "${CMAKE_BIN}")"
+  if [[ -n "${missing_deps}" ]]; then
+    echo "CMAKE override missing runtime deps: ${missing_deps}"
+  fi
   CMAKE_BIN=""
 fi
 
@@ -343,6 +403,9 @@ if [[ -z "${CMAKE_BIN}" ]]; then
 fi
 
 # Some cmake builds can be present but fail to launch due shared-library issues.
+if [[ -n "${CMAKE_BIN}" ]]; then
+  try_fix_cmake_runtime_deps "${CMAKE_BIN}"
+fi
 if ! is_supported_cmake "${CMAKE_BIN}"; then
   CMAKE_BIN=""
   for candidate in \
@@ -351,6 +414,9 @@ if ! is_supported_cmake "${CMAKE_BIN}"; then
     /lfs/sware/cmake3.30/bin/cmake \
     /usr/local/bin/cmake \
     /usr/bin/cmake; do
+    if [[ -x "${candidate}" ]]; then
+      try_fix_cmake_runtime_deps "${candidate}"
+    fi
     if [[ -x "${candidate}" ]] && is_supported_cmake "${candidate}"; then
       CMAKE_BIN="${candidate}"
       break
