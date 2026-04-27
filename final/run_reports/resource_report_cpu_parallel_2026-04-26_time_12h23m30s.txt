@@ -1,0 +1,35 @@
+======================================================================
+                       ToriRender Resource Report
+======================================================================
+
+[Run Summary]
+Run ID: cpu_parallel_2026-04-26_time_12h23m30s
+Total Ranks: 2
+Hosts Used: 1
+Visible GPUs (sum across hosts): 0
+CPU Slots Reported (sum ncpus): 2
+Total Rays Processed: 1105920000
+
+[Load Balance]
+Min Rank Runtime (s): 21086.444306
+Max Rank Runtime (s): 21087.132180
+Avg Rank Runtime (s): 21086.788243
+Imbalance Metric ((max-min)/avg): 0.000033
+
+[GPU Utilization Estimate]
+Average kernel/total ratio: 0.556101
+Interpretation: closer to 1.0 means more time in GPU kernel execution.
+
+[Per-Rank Breakdown]
+rank,host,gpu,shared_gpu,ncpus,omp_threads,rank_start,rank_end,row_start,row_count,rays,kernel_launches,kernels_async,gpu_active_s,scene_s,kernel_s,transfer_s,mpi_s,output_s,total_s,cpu_user_s,cpu_sys_s,cpu_idle_s,peak_mem_kb
+0,cn009,-1,no,1,1,2026-04-26 12:23:30,2026-04-26 18:14:57,0,450,552960000,0,no,0.000000,0.000025,2366.187743,0.000000,18720.215802,0.692343,21087.132180,4601.022595,16112.681745,373.427840,88828
+1,cn009,-1,no,1,1,2026-04-26 12:23:30,2026-04-26 18:14:56,450,450,552960000,0,no,0.000000,0.000028,21086.270699,0.000000,0.167600,0.000000,21086.444306,21032.501459,0.254988,53.687859,24328
+
+[Warnings]
+None
+
+[Efficiency Hints]
+1. If ranks share a GPU, reduce ranks per node or enforce 1 rank per GPU.
+2. If imbalance is high, adjust tile or row partitioning.
+3. If transfer time is high, batch host-device movement.
+4. If MPI time is high, reduce synchronization and gather overhead.
