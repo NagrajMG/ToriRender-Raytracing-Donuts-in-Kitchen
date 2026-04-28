@@ -1,0 +1,38 @@
+======================================================================
+                       ToriRender Resource Report
+======================================================================
+
+[Run Summary]
+Run ID: cpu_parallel_2026-04-28_time_22h14m06s
+Total Ranks: 5
+Hosts Used: 1
+Visible GPUs (sum across hosts): 0
+CPU Slots Reported (sum ncpus): 10
+Total Rays Processed: 1382400000
+
+[Load Balance]
+Min Rank Runtime (s): 7051.840249
+Max Rank Runtime (s): 7052.467410
+Avg Rank Runtime (s): 7051.999565
+Imbalance Metric ((max-min)/avg): 0.000089
+
+[GPU Utilization Estimate]
+Average kernel/total ratio: 0.446111
+Interpretation: closer to 1.0 means more time in GPU kernel execution.
+
+[Per-Rank Breakdown]
+rank,host,gpu,shared_gpu,ncpus,omp_threads,rank_start,rank_end,row_start,row_count,rays,kernel_launches,kernels_async,gpu_active_s,scene_s,kernel_s,transfer_s,mpi_s,output_s,total_s,cpu_user_s,cpu_sys_s,cpu_idle_s,peak_mem_kb
+0,cn197,-1,no,2,2,2026-04-28 22:14:06,2026-04-29 00:11:39,0,180,276480000,0,no,0.000000,0.000032,18.837832,0.000000,7033.095140,0.520408,7052.467410,831.626048,6222.756215,0.000000,78972
+1,cn197,-1,no,2,2,2026-04-28 22:14:06,2026-04-29 00:11:38,180,180,276480000,0,no,0.000000,0.000028,562.612451,0.000000,6489.309695,0.000000,7051.924960,1714.200540,5742.218167,0.000000,16148
+2,cn197,-1,no,2,2,2026-04-28 22:14:06,2026-04-29 00:11:38,360,180,276480000,0,no,0.000000,0.000028,2261.513340,0.000000,4790.408755,0.000000,7051.924950,4803.575302,4239.223886,0.000000,14096
+3,cn197,-1,no,2,2,2026-04-28 22:14:06,2026-04-29 00:11:38,540,180,276480000,0,no,0.000000,0.000026,7051.661346,0.000000,0.176045,0.000000,7051.840249,13139.386772,2.108825,0.000000,14124
+4,cn197,-1,no,2,2,2026-04-28 22:14:06,2026-04-29 00:11:38,720,180,276480000,0,no,0.000000,0.000024,5834.933219,0.000000,1216.904185,0.000000,7051.840255,10520.234109,1067.606465,0.000000,14260
+
+[Warnings]
+None
+
+[Efficiency Hints]
+1. If ranks share a GPU, reduce ranks per node or enforce 1 rank per GPU.
+2. If imbalance is high, adjust tile or row partitioning.
+3. If transfer time is high, batch host-device movement.
+4. If MPI time is high, reduce synchronization and gather overhead.
